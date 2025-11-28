@@ -45,11 +45,11 @@ The night window data should also be pre-calculated and saved to disk using the 
 
 """
 #%%
-moon_data_path = '/home/chengz/Code/Scheduling/data/score/moon_score/2026/moon_data_multi.pkl'
+moon_data_path = '/home/chengz/Code/Scheduling/data/score/moon_score/2027/moon_data_multi.pkl'
 with open(moon_data_path, 'rb') as f:
     pre_moon_data =  pickle.load(f)
 
-night_window_path = '/home/chengz/Code/Scheduling/data/score/moon_score/2026/night_window_multi.pkl'
+night_window_path = '/home/chengz/Code/Scheduling/data/score/moon_score/2027/night_window_multi.pkl'
 with open(night_window_path, 'rb') as f:
     pre_night_window =  pickle.load(f)
 
@@ -167,14 +167,14 @@ for row in data:
         target.observed = False  
         targets.append(target)
 hdul.close()
-# %% calculate moon score matrix for a range of dates(e.g. 2026-01-01 to 2026-12-31)
-for night_num in tqdm(range(200, 201), desc="Calculating moon score matrices for all dates in 2026"):
-    date = datetime(2026, 1, 1) + timedelta(days=night_num - 1)
+# %% calculate moon score matrix for a range of dates(e.g. 2027-01-01 to 2027-12-31)
+for night_num in tqdm(range(200, 201), desc="Calculating moon score matrices for all dates in 2027"):
+    date = datetime(2027, 1, 1) + timedelta(days=night_num - 1)
     date_str = date.strftime('%Y-%m-%d')
     msm = moon_score_matrix(targets, date_str,
                             use_parallel=True)
     # save the msm to disk
-    save_dir = '/home/chengz/Code/Scheduling/data/score/moon_score/2026/matrix/'
+    save_dir = '/home/chengz/Code/Scheduling/data/score/moon_score/2027/matrix/'
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
     save_path = os.path.join(save_dir, f'msm_{date_str}.npy')
