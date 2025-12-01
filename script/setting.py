@@ -19,3 +19,10 @@ altitude_limit= 30 * u.deg  # Minimum altitude for observations
 twilight_limit = -12 * u.deg  # Twilight limit for observations
 moon_separation_limit = 30 * u.deg # Minimum separation from the Moon
 moon_illumination_limit = 0.25 # Maximum moon illumination fraction
+#%%
+weather_factor=0.5 
+overhead_time=10*u.min
+
+alt_w = 1/3.0 
+moon_w = 1/3.0 
+basic_w = 1/3.0

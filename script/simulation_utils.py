@@ -140,7 +140,7 @@ def generate_night_window_multi(start_date_str, N_days, observer, time_resolutio
 
 #%% function of calculating score
 # Basic Score Matrix
-def basic_score_matrix(targets, time_resolution):
+def basic_score_matrix(targets, time_resolution, save_path=None):
     """
     Calculate the basic score matrix for the given targets.
     Parameters:
@@ -158,6 +158,11 @@ def basic_score_matrix(targets, time_resolution):
     bsm = np.ones((len(targets), len(time_grid)))
     for i, target in enumerate(tqdm(targets, desc="Calculating basic score matrix")):
         bsm[i, :] = (4 - target.priority) / 3.0
+    if save_path is not None:
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+        np.save(save_path, bsm)
+        print(f"Basic score matrix saved to {save_path}")
     return bsm
     
 # Altitude Score Matrix
@@ -208,7 +213,7 @@ def altitude_score(target, lst_time, observer, altitude_limit):
         return 0.0
     else:
         return (alt - altitude_limit) / (90*u.deg - altitude_limit)
-def altitude_score_matrix(targets, time_resolution, observer, altitude_limit):
+def altitude_score_matrix(targets, time_resolution, observer, altitude_limit, save_path=None):
     """
     Calculate the altitude score matrix for the given targets.
     Parameters:
@@ -231,6 +236,11 @@ def altitude_score_matrix(targets, time_resolution, observer, altitude_limit):
     for i, target in enumerate(tqdm(targets, desc="Calculating altitude score matrix")):
         for j, lst in enumerate(time_grid):
             asm[i, j] = altitude_score(target, lst, observer, altitude_limit)
+    if save_path is not None:
+        if not os.path.exists(os.path.dirname(save_path)):
+            os.makedirs(os.path.dirname(save_path))
+        np.save(save_path, asm)
+        print(f"Altitude score matrix saved to {save_path}")
     return asm
 # Moon Separation Score Matrix
 def get_moon_data_night(night_window_grid, observer, date, time_resolution):
