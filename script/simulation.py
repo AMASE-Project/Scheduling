@@ -32,6 +32,7 @@ from datetime import datetime, timedelta
 import multiprocessing as mp
 #%%
 class ScheduleSimulation():
+    """A class to simulate the scheduling of astronomical observations over multiple nights."""
     def __init__(self, observer_location, data_file,
                  time_resolution, start_date, N_days,
                  weather_factor=setting.weather_factor, overhead_time=setting.overhead_time,
@@ -42,6 +43,10 @@ class ScheduleSimulation():
                  bs_file = '/data/score/basic_score/bsm.npy',
                  as_file = '/data/score/altitude_score/asm.npy' 
                  ):
+        """
+        Initialize the ScheduleSimulation class.
+
+        """
         self.observer_location = observer_location
         self.data_file = data_file
         self.time_resolution = time_resolution
@@ -72,10 +77,26 @@ class ScheduleSimulation():
         self.schedule = {}
     
     def check_observed_state(self):
+        """ 
+        Check the observed state of all targets.
+        ----------------------------------------------------------------------------
+        Returns:
+        observed_state : np.array
+            An array indicating whether each target has been observed.
+        """
         self.observed_state = np.array([target.observed for target in self.targets])
         return self.observed_state
     
     def load_night_windows(self,date_str):
+        """Load or generate night windows for a given date.
+        ----------------------------------------------------------------------------
+        Parameters:
+        date_str : str
+            Date string in 'YYYY-MM-DD' format.
+        Returns:
+        night_windows : dict
+            Dictionary containing night window information.
+        """
         year_string = date_str[0:4]
         night_windows_file = self.dic + 'data/score/moon_score/' + year_string + '/night_window_multi.pkl'
         if os.path.exists(night_windows_file):
@@ -91,6 +112,12 @@ class ScheduleSimulation():
         return night_windows
     
     def load_bsm(self):
+        """Load or generate basic score matrix (BSM).
+        ----------------------------------------------------------------------------
+        Returns:
+        bsm : np.array
+            Basic score matrix.
+        """
         bsm_file = self.dic + self.bs_file
         if os.path.exists(bsm_file):
             bsm = np.load(bsm_file)
@@ -99,6 +126,11 @@ class ScheduleSimulation():
         return bsm
     
     def load_asm(self):
+        """Load or generate altitude score matrix (ASM).
+        ----------------------------------------------------------------------------
+        Returns:
+        asm_norm : np.array
+            Normalized altitude score matrix."""
         asm_file = self.dic + self.as_file
         if os.path.exists(asm_file):
             asm = np.load(asm_file)
@@ -113,6 +145,15 @@ class ScheduleSimulation():
         return asm_norm
     
     def load_msm(self, date_str):
+        """Load moon score matrix (MSM) for a given date.
+        ----------------------------------------------------------------------------
+        Parameters:
+        date_str : str
+            Date string in 'YYYY-MM-DD' format.
+        Returns:
+        msm : np.array
+            Moon score matrix.
+        """
         year_string = date_str[0:4]
         msm_file = self.dic + 'data/score/moon_score/' + year_string + '/matrix/msm_' + date_str + '.npy'
         if os.path.exists(msm_file):
@@ -123,6 +164,17 @@ class ScheduleSimulation():
         return msm
 
     def load_tsm(self, date_str, mask = None):
+        """Load or generate total score matrix (TSM) for a given date.
+        ----------------------------------------------------------------------------
+        Parameters:
+        date_str : str
+            Date string in 'YYYY-MM-DD' format.
+        mask : np.array, optional
+            Optional mask to apply to the score matrix.
+        Returns:
+        tsm : np.array
+            Total score matrix.
+        """
         asm = self.load_asm()
         bsm = self.load_bsm()
         msm = self.load_msm(date_str)
@@ -137,6 +189,7 @@ class ScheduleSimulation():
         return tsm
     
     def load_data(self):
+        """Load target data from the specified data file."""
         data = fits.open(self.data_file)[1].data
         for row in tqdm(data):
             name = row['OBJID']
@@ -175,6 +228,15 @@ class ScheduleSimulation():
         print("✓ Loaded altitude score matrix.")
     
     def get_night_window(self, date_str):
+        """Get the night window indices for a given date.
+        ----------------------------------------------------------------------------
+        Parameters:
+        date_str : str
+            Date string in 'YYYY-MM-DD' format.
+        Returns:
+        night_window_idx : np.array
+            Indices of the night window in the LST grid.
+        """
         self.night_windows = self.load_night_windows(date_str)
         print(f"✓ Loaded night windows for {date_str}.")
         if date_str not in self.night_windows:
@@ -191,6 +253,17 @@ class ScheduleSimulation():
         return night_window_idx
     
     def run_simulation_night(self, date_str, mask=None):
+        """Run the scheduling simulation for a single night.
+        ----------------------------------------------------------------------------
+        Parameters:
+        date_str : str
+            Date string in 'YYYY-MM-DD' format.
+        mask : np.array, optional
+            Optional mask to apply to the observation log.
+        Returns:
+        schedule : dict
+            Schedule for the night.
+        """
         print(f"★ Simulating observation for night {date_str}...")
         night_window_idx = self.get_night_window(date_str)
         schedule = {}
@@ -332,6 +405,21 @@ class ScheduleSimulation():
         return schedule
     
     def run_simulation_multi(self, start_date, N_days, outfile,mask=None):
+        """Run the scheduling simulation over multiple nights.
+        ----------------------------------------------------------------------------
+        Parameters:
+        start_date : str
+            Start date in 'YYYY-MM-DD' format.
+        N_days : int
+            Number of nights to simulate.
+        outfile : str
+            Output file to save the schedule.
+        mask : np.array, optional
+            Optional mask to apply to the observation log.
+        Returns:
+        all_schedules : dict
+            Combined schedule for all nights.
+        """
         all_schedules = {}
         date_list = [ (datetime.strptime(start_date, '%Y-%m-%d') + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(N_days)]
         original_stdout = sys.stdout
@@ -353,6 +441,7 @@ class ScheduleSimulation():
         return all_schedules
     
     def plot_sky_distribution(self):
+        """Plot the sky distribution of targets based on their observed state."""
         observed_targets = [target for target in self.targets if (target.state == 'Observed')]
         unobserved_targets = [target for target in self.targets if (target.state == 'Unobserved')]
         partobserved_targets = [target for target in self.targets if (target.state == 'Partially Observed')]
