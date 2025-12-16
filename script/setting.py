@@ -26,3 +26,4 @@ overhead_time=10*u.min
 alt_w = 1/3.0 
 moon_w = 1/3.0 
 basic_w = 1/3.0
+# %%

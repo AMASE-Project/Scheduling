@@ -1,4 +1,7 @@
 #%%
+import sys
+import os
+sys.path.append('/home/chengz/Code/Scheduling/script')
 import setting
 
 from tqdm.auto import tqdm

@@ -1,17 +1,21 @@
 # %%
+import os
+import sys
+script_path = '/home/chengz/Code/Scheduling/script' # please set your own path here
+if script_path not in sys.path:
+    sys.path.insert(0, script_path)
 import setting
 import simulation_utils as sim_utils
 
 from tqdm.auto import tqdm
 import logging
-import os
-import sys
+
 import pickle
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib import cm
+from matplotlib import axis, cm
 
 from astroplan import Observer, FixedTarget
 from astroplan import is_observable, observability_table
@@ -75,6 +79,7 @@ class ScheduleSimulation():
         self.night_windows = None
         self.targets = []
         self.schedule = {}
+        self.single_block_length = None
     
     def check_observed_state(self):
         """ 
@@ -205,17 +210,22 @@ class ScheduleSimulation():
                 if max_altitude < self.altitude_limit.value:
                     continue # Skip targets that never rise above altitude limit
                 target = FixedTarget(name=name, coord=SkyCoord(ra=ra * u.deg, dec=dec * u.deg, frame='icrs'))
-                ori_time = row['EXPTIME'] * row['NUMEXP'] * row['DITHER']
-                if ori_time < 3 * 60:
+                ori_time = row['EXPTIME']
+                if ori_time <= 3 * 60:
                     ori_time = 3 * 60  # Minimum observation time is 3 minutes
-                elif ori_time < 15 * 60:
+                elif ori_time <= 15 * 60:
                     ori_time = 15 * 60  # Minimum observation time is 15 minutes
-                elif ori_time < 30 * 60:
+                elif ori_time <= 30 * 60:
                     ori_time = 30 * 60  # Minimum observation time is 30 minutes
+                elif ori_time <= 60 * 60:
+                    ori_time = 60 * 60  # Minimum observation time is 60 minutes
                 else:
-                    mm = ori_time // (1800) + 1
-                    ori_time = mm * 1800  # Round up to the next half hour
-                target.exposure_time = TimeDelta(ori_time * u.second + self.overhead_time)
+                    mm = ori_time // (3600) + 1
+                    ori_time = mm * 3600  # Round up to the next hour
+                ori_time = ori_time * row['DITHER']
+                new_time = ori_time * row['NUMEXP']
+                target.exposure_time = TimeDelta(new_time * u.second)
+                target.single_exposure = TimeDelta(ori_time * u.second)
                 target.priority = int(priority)
                 target.observed = False
                 target.source = source
@@ -252,6 +262,31 @@ class ScheduleSimulation():
             night_window_idx = np.where((self.lst_grid >= lst_sun_set) | (self.lst_grid <= lst_sun_rise))[0]
         return night_window_idx
     
+    def cal_single_block_length(self):
+        num = np.zeros(len(self.targets))
+        for i in range(len(self.targets)):
+            single_exp = self.targets[i].single_exposure.to(u.min).value
+            num[i] = np.ceil(single_exp / self.time_resolution.to(u.min).value)
+        
+        self.single_block_length = num
+        return num
+
+    def slice_by_zeros_compact(self,arr):
+        # Slice each row of a 1D array into continuous segments based on zero values.
+        indices_list = []
+        current_indices = []
+        
+        for i, value in enumerate(arr):
+            if value != 0:
+                current_indices.append(i)
+            elif current_indices:
+                indices_list.append(np.array(current_indices))
+                current_indices = []
+        if current_indices:
+            indices_list.append(np.array(current_indices))
+        
+        return indices_list
+        
     def run_simulation_night(self, date_str, mask=None):
         """Run the scheduling simulation for a single night.
         ----------------------------------------------------------------------------
@@ -309,18 +344,27 @@ class ScheduleSimulation():
         AS_tonight = AS_normalized[:, night_window_idx]
 
         # only keep .3f
-        AS_tonight = np.round(AS_tonight, 3)
+        AS_tonight = np.round(AS_tonight, 4)
 
         while night_length>0:
+            # get AS_tonight>0 numbers for each target
+
+            num_AS = np.nansum(AS_tonight>0, axis=1)
+            # mask targets that cannot be finished in the remaining visible slots
+            mask_AS = (num_AS < self.single_block_length)
+            AS_tonight[mask_AS, :] = 0
+
+
             AS_sum  = np.round(np.sum(AS_tonight, axis=1)* (~observation_log),3) # zero score for observed targets
             AS_max = np.round(np.nanmax(AS_tonight, axis=1) * (~observation_log),3)
 
             AS_sum[AS_sum>1] = 1
 
             max_sum_AS = np.nanmax(AS_sum)
+
             max_sum_AS_index = np.where(AS_sum == max_sum_AS)[0]
 
-            if max_sum_AS <=0.01 or len(max_sum_AS_index)==0:
+            if max_sum_AS <=0.0001 or len(max_sum_AS_index)==0:
                 print("✗ No more observable targets for tonight.")
                 break
 
@@ -335,8 +379,8 @@ class ScheduleSimulation():
             # check how many lst slots are needed for the target
             target = self.targets[target_index]
             exptime = int(target.exposure_time.to(u.min).value)
-            slots_needed = int(np.ceil(exptime / self.time_resolution.to(u.min).value))
-
+            overhead_needed = int(np.ceil(self.overhead_time.to(u.min).value / self.time_resolution.to(u.min).value))
+            slots_needed = int(np.ceil(exptime / self.time_resolution.to(u.min).value)) + overhead_needed # consider overhead time
             # check the remaining slots for this target in the night window
             AS_seq = AS_tonight[target_index, :]
             remaining_slots_index = np.where(AS_seq>0)[0]
@@ -345,21 +389,78 @@ class ScheduleSimulation():
             if len(remaining_slots_index) == 0:
                 print('some error: no remaining slots available for target')
                 break
-            if remaining_slots <= slots_needed:
-                # use all remaining slots
-                chosen_slots = remaining_slots_index
+
+            # get the continuous segments of AS_seq
+            continuous_segments = self.slice_by_zeros_compact(AS_seq)
+            if len(continuous_segments) == 0:
+                print('some error: no continuous segments found for target')
+                break
+
+            # check each continuous segment if it can cover the slots_needed
+            # if yes, choose the part of segment with highest AS score, the length is slots_needed.
+            # if no segment can cover, check if it can cover single_block_length
+            
+            # if yes, choose the part of segment with highest AS score, the length is single_block_length
+            # if no segment can cover single_block_length, this target cannot be observed tonight. mark all its AS_tonight as 0 and continue.
+            chosen_slots = []
+            possible_AS_sum_full = []
+            possible_slots_full = []
+            possible_AS_sum_partial = []
+            possible_slots_partial = []
+            for segment in continuous_segments:
+                if len(segment) >= slots_needed:
+                    # find the best position to fit the slots_needed
+                    sorted_indices = segment[np.argsort(-AS_seq[segment])]
+                    possible_slots = sorted_indices[:slots_needed]
+                    possible_AS_sum = np.sum(AS_seq[possible_slots])
+                    possible_AS_sum_full.append(possible_AS_sum)
+                    possible_slots_full.append(possible_slots)
+                elif len(segment) >= int(self.single_block_length[target_index] + overhead_needed):
+                    # find the best position to fit the single_block_length
+                    sorted_indices = segment[np.argsort(-AS_seq[segment])]
+                    cover_num_slots = len(segment)//int(self.single_block_length[target_index] + overhead_needed)
+                    if cover_num_slots ==0:
+                        continue
+                    possible_slots = sorted_indices[:cover_num_slots*int(self.single_block_length[target_index] + overhead_needed)]
+                    possible_AS_sum = np.sum(AS_seq[possible_slots])
+                    possible_AS_sum_partial.append(possible_AS_sum)
+                    possible_slots_partial.append(possible_slots)
+                else:
+                    continue
+            if len(possible_AS_sum_full) >0:
+                best_full_index = np.argmax(possible_AS_sum_full)
+                chosen_slots = possible_slots_full[best_full_index]
+            elif len(possible_AS_sum_partial) >0:
+                best_partial_index = np.argmax(possible_AS_sum_partial)
+                chosen_slots = possible_slots_partial[best_partial_index]
             else:
-                # find the best position to fit the slots_needed
-                # sort the remaining_slots_index based on the AS score and choose the high needed slots
-                sorted_indices = remaining_slots_index[np.argsort(-AS_seq[remaining_slots_index])]
-                chosen_slots = sorted_indices[:slots_needed]
+                # cannot be observed tonight
+                AS_tonight[target_index, :] = 0
+                continue
+
+            #if remaining_slots <= slots_needed:
+            #    # use all remaining slots
+            #    sorted_indices = remaining_slots_index[np.argsort(-AS_seq[remaining_slots_index])]
+
+            #    cover_num_slots = len(remaining_slots_index)//int(self.single_block_length[target_index])
+            #    if cover_num_slots ==0:
+            #        print('some error: no enough slots to cover even a single block')
+            #        break
+            #    chosen_slots = sorted_indices[:cover_num_slots*int(self.single_block_length[target_index])]
+            #
+            #    #chosen_slots = remaining_slots_index
+            #else:
+            #    # find the best position to fit the slots_needed
+            #    # sort the remaining_slots_index based on the AS score and choose the high needed slots
+            #    sorted_indices = remaining_slots_index[np.argsort(-AS_seq[remaining_slots_index])]
+            #    chosen_slots = sorted_indices[:slots_needed]
             
             # mark the chosen slots as used
             for slot in chosen_slots:
                 AS_tonight[:, slot] = 0
             night_length -= len(chosen_slots)
             # check if the target can be fully observed
-            if len(chosen_slots) * self.time_resolution.to(u.min).value >= exptime:
+            if (len(chosen_slots)-overhead_needed) * self.time_resolution.to(u.min).value >= exptime:
                 # mark the target as observed
                 observation_log[target_index] = True
                 self.targets[target_index].observed = True
@@ -377,7 +478,7 @@ class ScheduleSimulation():
                 print(f"The scheduled LST times are: {scheduled_times}.")
             else:
                 self.targets[target_index].state = 'Partially Observed'
-                self.targets[target_index].exposure_time -= TimeDelta((len(chosen_slots) * self.time_resolution.to(u.s).value) * u.second)
+                self.targets[target_index].exposure_time -= TimeDelta(((len(chosen_slots)-overhead_needed) * self.time_resolution.to(u.s).value) * u.second)
                 if self.targets[target_index].exposure_time < TimeDelta(0.5 * u.min):
                     self.targets[target_index].exposure_time = TimeDelta(0 * u.second)
                     self.targets[target_index].observed = True
@@ -404,7 +505,50 @@ class ScheduleSimulation():
 
         return schedule
     
-    def run_simulation_multi(self, start_date, N_days, outfile,mask=None):
+
+    def plot_sky_distribution(self, mask=False,date_str=None, save_path=None):
+        """Plot the sky distribution of targets based on their observed state."""
+        observed_targets = [target for target in self.targets if (target.state == 'Observed')]
+        unobserved_targets = [target for target in self.targets if (target.state == 'Unobserved')]
+        partobserved_targets = [target for target in self.targets if (target.state == 'Partially Observed')]
+        if mask:
+            observed_targets = [target for target in self.targets if (target.state == 'Observed') and (target.source != 'DIG_ZHANGWEI') and (target.source != 'WR_LIANG')]
+            unobserved_targets = [target for target in self.targets if (target.state == 'Unobserved') and (target.source != 'DIG_ZHANGWEI') and (target.source != 'WR_LIANG')]
+            partobserved_targets = [target for target in self.targets if (target.state == 'Partially Observed') and (target.source != 'DIG_ZHANGWEI') and (target.source != 'WR_LIANG')]
+        
+        observed_ra = [target.coord.ra.deg for target in observed_targets]       
+        observed_dec = [target.coord.dec.deg for target in observed_targets]
+        unobserved_ra = [target.coord.ra.deg for target in unobserved_targets]
+        unobserved_dec = [target.coord.dec.deg for target in unobserved_targets]
+        partobserved_ra = [target.coord.ra.deg for target in partobserved_targets]
+        partobserved_dec = [target.coord.dec.deg for target in partobserved_targets]
+        SkyCoord_observed = SkyCoord(ra=observed_ra*u.deg, dec=observed_dec*u.deg, frame='icrs')
+        SkyCoord_unobserved = SkyCoord(ra=unobserved_ra*u.deg, dec=unobserved_dec*u.deg, frame='icrs')
+        SkyCoord_partobserved = SkyCoord(ra=partobserved_ra*u.deg, dec=partobserved_dec*u.deg, frame='icrs')
+        fig = plt.figure(figsize=(10, 5),dpi=200)
+        ax = fig.add_subplot(111, projection='mollweide')
+        #ax.scatter(SkyCoord_unobserved.ra.wrap_at(180*u.deg).radian, SkyCoord_unobserved.dec.radian, s=3, color='gray', label='Unobserved Targets', alpha=0.3)
+        ax.scatter(SkyCoord_observed.ra.wrap_at(180*u.deg).radian, SkyCoord_observed.dec.radian, s=3, color='blue', label='Observed Targets', alpha=0.6)
+        ax.scatter(SkyCoord_partobserved.ra.wrap_at(180*u.deg).radian, SkyCoord_partobserved.dec.radian, s=3, color='red', label='Partially Observed Targets', alpha=0.6)
+        ax.scatter(SkyCoord_unobserved.ra.wrap_at(180*u.deg).radian, SkyCoord_unobserved.dec.radian, s=3, color='gray', label='Unobserved Targets', alpha=0.3)
+
+        xticks = np.arange(-150, 180, 30)
+        xtick_labels = [(x + 360) % 360 for x in xticks]
+        ax.set_xticks(xticks * np.pi / 180)
+        ax.set_xticklabels(xtick_labels)
+
+        ax.set_xlabel('Right Ascension (degrees)')
+        ax.set_ylabel('Declination (degrees)')
+        ax.set_title(f'Targets State on {date_str}' if date_str else 'Targets State', fontsize=16)
+        ax.grid(True)
+        ax.legend(loc='upper right')
+        if save_path is not None:
+            plt.savefig(save_path)
+        else:
+            plt.show()
+        plt.close()
+    
+    def run_simulation_multi(self, start_date, N_days, outfile, pngfile, maskplot = False,plot = False,mask=None):
         """Run the scheduling simulation over multiple nights.
         ----------------------------------------------------------------------------
         Parameters:
@@ -428,6 +572,9 @@ class ScheduleSimulation():
             for date_str in tqdm(date_list, desc="Simulating multiple nights"):
                 daily_schedule = self.run_simulation_night(date_str, mask)
                 all_schedules.update(daily_schedule)
+                if plot:
+                    png_file_date = pngfile.replace('.png', f'_{date_str}.png')
+                    self.plot_sky_distribution(date_str=date_str, mask=maskplot, save_path=png_file_date)
         sys.stdout = original_stdout
         self.schedule = all_schedules
         print(f"✓ Finished multi-night simulation. Schedule saved to {outfile}.")
@@ -440,39 +587,6 @@ class ScheduleSimulation():
             pickle.dump(self.targets, f)
         return all_schedules
     
-    def plot_sky_distribution(self):
-        """Plot the sky distribution of targets based on their observed state."""
-        observed_targets = [target for target in self.targets if (target.state == 'Observed')]
-        unobserved_targets = [target for target in self.targets if (target.state == 'Unobserved')]
-        partobserved_targets = [target for target in self.targets if (target.state == 'Partially Observed')]
-        observed_ra = [target.coord.ra.deg for target in observed_targets]       
-        observed_dec = [target.coord.dec.deg for target in observed_targets]
-        unobserved_ra = [target.coord.ra.deg for target in unobserved_targets]
-        unobserved_dec = [target.coord.dec.deg for target in unobserved_targets]
-        partobserved_ra = [target.coord.ra.deg for target in partobserved_targets]
-        partobserved_dec = [target.coord.dec.deg for target in partobserved_targets]
-        SkyCoord_observed = SkyCoord(ra=observed_ra*u.deg, dec=observed_dec*u.deg, frame='icrs')
-        SkyCoord_unobserved = SkyCoord(ra=unobserved_ra*u.deg, dec=unobserved_dec*u.deg, frame='icrs')
-        SkyCoord_partobserved = SkyCoord(ra=partobserved_ra*u.deg, dec=partobserved_dec*u.deg, frame='icrs')
-        fig = plt.figure(figsize=(10, 5),dpi=200)
-        ax = fig.add_subplot(111, projection='mollweide')
-        ax.scatter(SkyCoord_unobserved.ra.wrap_at(180*u.deg).radian, SkyCoord_unobserved.dec.radian, s=3, color='gray', label='Unobserved Targets', alpha=0.3)
-        ax.scatter(SkyCoord_observed.ra.wrap_at(180*u.deg).radian, SkyCoord_observed.dec.radian, s=3, color='blue', label='Observed Targets', alpha=0.6)
-        ax.scatter(SkyCoord_partobserved.ra.wrap_at(180*u.deg).radian, SkyCoord_partobserved.dec.radian, s=3, color='red', label='Partially Observed Targets', alpha=0.6)
-        xticks = np.arange(-150, 180, 30)
-        xtick_labels = [(x + 360) % 360 for x in xticks]
-        ax.set_xticks(xticks * np.pi / 180)
-        ax.set_xticklabels(xtick_labels)
-
-        ax.set_xlabel('Right Ascension (degrees)')
-        ax.set_ylabel('Declination (degrees)')
-        ax.set_title(f'Targets State', fontsize=16)
-        ax.grid(True)
-        ax.legend(loc='upper right')
-        plt.show()
-        plt.close()
-
-    
 # %% test
 """
 if __name__ == "__main__":
@@ -480,11 +594,17 @@ if __name__ == "__main__":
     data_file = '/home/chengz/Code/Scheduling/data/targets/combined_sample_v2.fits'
     time_resolution = setting.time_resolution
     start_date = '2026-01-01'
+
+
     N_days = 365
     sim = ScheduleSimulation(observer_location, data_file,
-                             time_resolution, start_date, N_days)
+                                time_resolution, start_date, N_days)
     sim.load_data()
-    outfile = '/home/chengz/Code/Scheduling/output/simulation_schedule.txt'
-    sim.run_simulation_multi(start_date=start_date, N_days=N_days, outfile=outfile)
+    sim.cal_single_block_length()
+
+    outfile = '/home/chengz/Code/Scheduling/output/simulation_schedule_2026-01-01_365days.txt'
+    pngfile = '/home/chengz/Code/Scheduling/output/plot/sky_test.png'
+    sim.run_simulation_multi(start_date=start_date, N_days=N_days, outfile=outfile, pngfile=pngfile)
     sim.plot_sky_distribution()
 """
+# %%
