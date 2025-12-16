@@ -343,7 +343,7 @@ class ScheduleSimulation():
         AS_normalized = AS / np.sum(AS, axis=1, keepdims=True)
         AS_tonight = AS_normalized[:, night_window_idx]
 
-        # only keep .3f
+        # only keep .4f
         AS_tonight = np.round(AS_tonight, 4)
 
         while night_length>0:
@@ -502,6 +502,7 @@ class ScheduleSimulation():
             print(f"★ Finished scheduling for night {date_str}. Total scheduled targets: {num_scheduled_targets}.")
         left_targets = np.sum(~observation_log)
         print(f"★ Remaining unobserved/unfinished targets: {left_targets}/{len(self.targets)}.")
+        print("--------------------------------------------------")
 
         return schedule
     
