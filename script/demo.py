@@ -23,9 +23,7 @@ if __name__ == "__main__":
     sim_2026 = sim.ScheduleSimulation(observer_location, data_file,
                              time_resolution, start_date, N_days)
     sim_2026.load_data()
-    sim_2026.cal_single_block_length()
-    #sim_2026.run_simulation_night(start_date)
-    
+    sim_2026.cal_single_block_length()    
     
     targets = sim_2026.targets
     mask_dig = np.zeros(len(targets), dtype=bool)
@@ -41,5 +39,3 @@ if __name__ == "__main__":
     # For no mask plotting
     sim_2026.run_simulation_multi(start_date=start_date, N_days=N_days, outfile=outfile, pngfile=pngfile, maskplot = False, plot=False)
     sim_2026.plot_sky_distribution()
-
-# %%

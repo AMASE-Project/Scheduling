@@ -386,7 +386,7 @@ class ScheduleSimulation():
             remaining_slots_index = np.where(AS_seq>0)[0]
             remaining_slots = len(remaining_slots_index)
 
-            if len(remaining_slots_index) == 0:
+            if remaining_slots == 0:
                 print('some error: no remaining slots available for target')
                 break
 
@@ -396,12 +396,24 @@ class ScheduleSimulation():
                 print('some error: no continuous segments found for target')
                 break
 
+            # REMIND: the first segment and the last segment may be connecteded due to the wrap-around of LST,
+            # so we need to check and merge them if necessary
+            if len(continuous_segments) > 1:
+                first_segment = continuous_segments[0]
+                last_segment = continuous_segments[-1]
+                first_index = night_window_idx[first_segment[0]]
+                end_index = night_window_idx[last_segment[-1]]
+                if (first_index == 0) and (end_index ==  len(self.lst_grid)-1):
+                    # that means they are connected
+                    # merge the two segments
+                    merged_segment = np.append(last_segment, first_segment)
+                    continuous_segments[0] = merged_segment
+                
             # check each continuous segment if it can cover the slots_needed
             # if yes, choose the part of segment with highest AS score, the length is slots_needed.
             # if no segment can cover, check if it can cover single_block_length
-            
-            # if yes, choose the part of segment with highest AS score, the length is single_block_length
-            # if no segment can cover single_block_length, this target cannot be observed tonight. mark all its AS_tonight as 0 and continue.
+                # if yes, choose the part of segment with highest AS score, the length is single_block_length
+                # if no segment can cover single_block_length, this target cannot be observed tonight. mark all its AS_tonight as 0 and continue.
             chosen_slots = []
             possible_AS_sum_full = []
             possible_slots_full = []
