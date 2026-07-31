@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime products
+example/outputs/
+*.npz
+
+# Local analysis & legacy files (not part of the package)
+/work/
+/test/
+/combined_sample_v2.fits
+/combined_sample_v2.csv
+/combined_sample_v2_full.csv
+/targets.csv
+/targets.pdf
+/AMASE_scheduling.txt
+/REVIEW.md
+/ALGORITHM.md
+/example/targets_legacy.csv
+/example/anaconda_projects/
