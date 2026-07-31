@@ -95,7 +95,7 @@ are required except `group`:
 | `ra` | deg / sexagesimal | Right ascension. Accepts `109.62`, `06h31m50.0s`, `6:31:50` |
 | `dec` | deg / sexagesimal | Declination. Accepts `-13.22`, `+04d59m54s` |
 | `priority` | float | Priority **weight** — larger wins. If your catalog uses rank semantics (1 = highest), invert it to weights with `--invert-priority` |
-| `exp_time` | float (s) | Single exposure time, **≤ 3600** |
+| `exp_time` | float (s) | Single exposure time in seconds, **≤ 3600 s** |
 | `n_dither` | int | Dither count (executed back-to-back, indivisible), **must be 1 / 3 / 9 / 27** |
 | `n_exposure` | int | Number of independent visits (**season-total demand**, accumulated across nights), **≥ 1** |
 | `group` | string | Target group (used for plot coloring / statistics). **Optional: a missing column or empty cell becomes `Untitle`** |

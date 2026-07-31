@@ -145,7 +145,7 @@ raised for:
   sexagesimal (`12h18m57.5s`, `12:18:57.5`, `+47d18m14s`); fractional
   hours/minutes (`05h40.9m0.0s`) are normalized by carrying into the
   next lower unit before parsing;
-- `exp_time` outside `(0, 3600]`;
+- `exp_time` outside `(0, 3600] s`;
 - `n_dither` not in `{1, 3, 9, 27}`;
 - `n_exposure < 1`.
 
