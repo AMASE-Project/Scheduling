@@ -58,7 +58,7 @@ AMASE_scheduling/
 │       └── cli_plot.py           # amase-plot
 ├── tests/                        # pytest smoke tests (loader / scheduler / CSV round-trip)
 └── example/
-    ├── targets.csv               # example 36-target list (grouped)
+    ├── targets.csv               # example 42-target list (grouped)
     ├── demo.py                   # end-to-end API walkthrough (script)
     ├── demo.ipynb                # the same walkthrough as a Jupyter notebook
     └── outputs/                  # created by the demos at runtime

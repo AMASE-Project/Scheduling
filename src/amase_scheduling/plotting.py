@@ -31,7 +31,7 @@ OVERHEAD_MIN = 10
 
 TARGET_COLORS = plt.get_cmap("tab20").colors
 MAX_CAMPAIGN_TARGETS = 100
-GROUP_PANEL_THRESHOLD = 40
+GROUP_PANEL_THRESHOLD = 50
 GROUP_COLORS = [c for i, c in enumerate(TARGET_COLORS) if i not in (0, 1, 14, 15)]
 LOCAL_OFFSET = timedelta(hours=8)
 UTIL_Y0, UTIL_Y1 = 3.0, 22.0
