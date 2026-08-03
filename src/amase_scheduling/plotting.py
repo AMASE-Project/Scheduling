@@ -350,9 +350,9 @@ def plot_campaign_figure(
     else:
         ypos = np.arange(len(labels))
         xmax = max(int(req.max()), 1)
-        ax2.barh(ypos, done, color=colors, edgecolor="k", linewidth=0.4, zorder=3)
-        ax2.barh(ypos, req - done, left=done, color="0.85", edgecolor="k",
-                 linewidth=0.4, zorder=2)
+        ax2.barh(ypos, done, color=colors, edgecolor="none", zorder=3)
+        ax2.barh(ypos, req - done, left=done, facecolor="none",
+                 edgecolor=colors, linewidth=0.8, zorder=2)
         for y, dn, rq in zip(ypos, done, req):
             frac = dn / rq if rq else 0.0
             ax2.text(rq + xmax * 0.01, y, f"{dn}/{rq} ({frac:.0%})",
