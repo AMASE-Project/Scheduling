@@ -445,7 +445,7 @@ Written by `amase-schedule -o FILE`:
 
 | File | Columns | Content |
 |------|---------|---------|
-| `FILE` (blocks) | `date, target, visit, obs_start_utc, obs_end_utc, obs_start_local, obs_end_local, duration_min, altitude_deg, azimuth_deg, moon_sep_deg` | one row per scheduled block |
+| `FILE` (blocks) | `date, target, visit, obs_start_utc, obs_end_utc, obs_start_local, obs_end_local, lst_start, lst_end, duration_min, altitude_deg, azimuth_deg, moon_sep_deg` | one row per scheduled block; LST = apparent sidereal time, HH:MM mod 24 |
 | `<stem>_targets.csv` | `target, required, done, fraction, nights_observed, obs_hours` | per-target campaign progress |
 | `<stem>_nights.csv` | `date, clear, night_start_utc, night_end_utc, dark_start_utc, dark_end_utc, n_blocks, n_targets, obs_hours, n_unschedulable` | nightly index; window columns are physical and filled for cloudy nights too, distinguishing weather loss from clear-but-empty nights |
 

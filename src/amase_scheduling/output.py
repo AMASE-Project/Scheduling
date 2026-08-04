@@ -4,7 +4,13 @@ from datetime import timezone, timedelta
 import astropy.units as u
 from astropy.time import Time
 
-from amase_scheduling.observatory import NanshanObserver, night_window
+from amase_scheduling.observatory import (
+    LONGITUDE,
+    NanshanObserver,
+    format_lst,
+    lst_hours,
+    night_window,
+)
 from amase_scheduling.scheduler import Schedule, ScheduledBlock, NightPlan, TargetProgress
 from amase_scheduling.visibility import dark_window
 
@@ -23,6 +29,8 @@ CSV_HEADER = [
     "obs_end_utc",
     "obs_start_local",
     "obs_end_local",
+    "lst_start",
+    "lst_end",
     "duration_min",
     "altitude_deg",
     "azimuth_deg",
@@ -44,7 +52,7 @@ def _utc_to_local(utc_iso: str) -> str:
     return d.astimezone(LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def _block_row(date: str, block: ScheduledBlock) -> dict:
+def _block_row(date: str, block: ScheduledBlock, longitude=LONGITUDE) -> dict:
     start_iso = block.start_time.isot
     end_iso = block.end_time.isot
     duration = (block.end_time - block.start_time).to(u.min).value
@@ -56,6 +64,8 @@ def _block_row(date: str, block: ScheduledBlock) -> dict:
         "obs_end_utc": end_iso,
         "obs_start_local": _utc_to_local(start_iso),
         "obs_end_local": _utc_to_local(end_iso),
+        "lst_start": format_lst(float(lst_hours(block.start_time, longitude))),
+        "lst_end": format_lst(float(lst_hours(block.end_time, longitude))),
         "duration_min": f"{duration:.1f}",
         "altitude_deg": f"{block.altitude:.1f}",
         "azimuth_deg": f"{block.azimuth:.1f}",
@@ -63,13 +73,13 @@ def _block_row(date: str, block: ScheduledBlock) -> dict:
     }
 
 
-def save_schedule_csv(schedule: Schedule, path: str) -> None:
+def save_schedule_csv(schedule: Schedule, path: str, longitude=LONGITUDE) -> None:
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_HEADER)
         writer.writeheader()
         for night in schedule.nights:
             for block in night.blocks:
-                writer.writerow(_block_row(night.date, block))
+                writer.writerow(_block_row(night.date, block, longitude))
 
 
 def save_targets_csv(schedule: Schedule, path: str) -> None:
@@ -186,7 +196,7 @@ def load_schedule_csvs(
     )
 
 
-def _night_detail_lines(schedule: Schedule) -> list[str]:
+def _night_detail_lines(schedule: Schedule, longitude=LONGITUDE) -> list[str]:
     """Single-night section: full block table + window/efficiency detail."""
     night = schedule.nights[0]
     n_total = len(schedule.progress)
@@ -201,6 +211,7 @@ def _night_detail_lines(schedule: Schedule) -> list[str]:
             "visit": 5,
             "obs_start_utc": 20,
             "obs_end_utc": 20,
+            "lst": 11,
             "duration_min": 8,
             "altitude_deg": 8,
             "azimuth_deg": 8,
@@ -211,8 +222,9 @@ def _night_detail_lines(schedule: Schedule) -> list[str]:
         lines.append(header_line)
         lines.append(sep_line)
         for block in night.blocks:
-            row = _block_row(night.date, block)
+            row = _block_row(night.date, block, longitude)
             row["target"] = _truncate(row["target"], MAX_NAME_LEN)
+            row["lst"] = f"{row['lst_start']}-{row['lst_end']}"
             lines.append("  ".join(f"{row[h]:>{col_widths[h]}}" for h in col_widths))
     else:
         lines.append("[No blocks scheduled]")
@@ -301,7 +313,7 @@ def _summary_lines(schedule: Schedule) -> list[str]:
     return lines
 
 
-def format_report(schedule: Schedule) -> str:
+def format_report(schedule: Schedule, longitude=LONGITUDE) -> str:
     """Unified report for any campaign length. Single-night schedules
     (n_nights == 1) expand the night section into a full block table."""
     lines = []
@@ -319,7 +331,7 @@ def format_report(schedule: Schedule) -> str:
     lines.append("")
 
     if schedule.is_single_night:
-        lines.extend(_night_detail_lines(schedule))
+        lines.extend(_night_detail_lines(schedule, longitude))
     else:
         lines.extend(_night_summary_lines(schedule))
     lines.append("")

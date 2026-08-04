@@ -12,7 +12,12 @@ from astropy.coordinates import AltAz, get_body
 from astropy.time import Time, TimeDelta
 from astroplan import Observer
 
-from amase_scheduling.observatory import NanshanObserver, night_window
+from amase_scheduling.observatory import (
+    SIDEREAL_RATE,
+    NanshanObserver,
+    lst_hours,
+    night_window,
+)
 from amase_scheduling.scheduler import NightPlan, Schedule
 from amase_scheduling.target import Target
 from amase_scheduling.visibility import dark_window
@@ -63,6 +68,29 @@ def _format_time_axis(ax, night: NightPlan) -> None:
     ax.set_xlabel("UTC (HH:MM)")
     if night.night_start is not None and night.night_end is not None:
         ax.set_xlim(night.night_start.to_datetime(), night.night_end.to_datetime())
+
+
+def _add_lst_axis(ax, t0: Time, t1: Time, observer: Observer) -> None:
+    """Secondary top axis with LST ticks every 2 h. Ticks are placed by
+    inverting the UTC->LST mapping (constant sidereal rate anchored on the
+    exact apparent LST at t0); call after the main x-limits are set."""
+    lon = observer.location.lon
+    lst0 = float(lst_hours(t0, lon))
+    lst1 = lst0 + (t1 - t0).to(u.hour).value * SIDEREAL_RATE  # unwrapped
+    step = 2.0
+    v = np.ceil(lst0 / step) * step
+    ticks, labels = [], []
+    while v <= lst1:
+        dt_h = (v - lst0) / SIDEREAL_RATE
+        pos = mdates.date2num(t0.to_datetime() + timedelta(hours=float(dt_h)))
+        ticks.append(pos)
+        labels.append(f"{int(round(v)) % 24}h")
+        v += step
+    ax2 = ax.twiny()
+    ax2.set_xlim(ax.get_xlim())
+    ax2.set_xticks(ticks)
+    ax2.set_xticklabels(labels, fontsize=9)
+    ax2.set_xlabel("LST", fontsize=10)
 
 
 def _blank_figure(title: str, message: str, path: str) -> None:
@@ -183,6 +211,7 @@ def plot_night_figure(
     ax_gantt.set_ylabel("Target")
     ax_gantt.grid(axis="x", ls=":", lw=0.5, alpha=0.6)
     _format_time_axis(ax_gantt, night)
+    _add_lst_axis(ax_alt, night.night_start, night.night_end, observer)
 
     fig.align_ylabels([ax_alt, ax_gantt])
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -416,6 +445,20 @@ def plot_track_figure(
     )
     ax_alt.axhline(0.0, color="0.4", lw=0.6, zorder=1)
     _shade_twilight(ax_alt, grid, sun_alt)
+
+    lon = observer.location.lon
+    lst0 = float(lst_hours(night_start, lon))
+    lst1 = lst0 + (night_end - night_start).to(u.hour).value * SIDEREAL_RATE
+    ra_unwrapped = lst0 + (float(coord.ra.hour) - lst0) % 24.0
+    if ra_unwrapped <= lst1:
+        t_tr = night_start.to_datetime() + timedelta(
+            hours=(ra_unwrapped - lst0) / SIDEREAL_RATE
+        )
+        ax_alt.axvline(
+            t_tr, color="green", ls="--", lw=1.0, zorder=2,
+            label="transit (LST = RA)",
+        )
+
     ax_alt.set_ylabel("Altitude (deg)")
     ax_alt.legend(fontsize=8, loc="upper right", framealpha=0.9)
     ax_alt.set_title(f"{label} — {date} — Moon illumination {illum:.0%}")
@@ -437,6 +480,7 @@ def plot_track_figure(
     ax_sep.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
     ax_sep.set_xlabel("UTC (HH:MM)")
     ax_sep.set_xlim(night_start.to_datetime(), night_end.to_datetime())
+    _add_lst_axis(ax_alt, night_start, night_end, observer)
 
     fig.align_ylabels([ax_alt, ax_sep])
     fig.savefig(path, dpi=150, bbox_inches="tight")
