@@ -7,6 +7,8 @@ optimal** observing plans with mixed-integer linear programming
 (MILP, PuLP + CBC) — from single-night scheduling to multi-night
 campaign simulation with a weather model.
 
+![Overview of AMASE-P Scheduling](example/flowchart.png)
+
 ---
 
 ## 1. Installation
