@@ -330,13 +330,18 @@ A: Single nights default to `--clear-prob 1.0` (tonight you're really
 observing — no dice rolled). Lower it explicitly only to simulate
 "tonight might be cloudy".
 
-**Q: Why do far-southern targets (e.g. WR7/WR116 at Dec = −13°) never
-get scheduled?**
-A: From Nanshan at 43.5°N they culminate at only ~34° — the visible
-window is extremely narrow, and if transit falls in twilight or daylight
-they cannot be scheduled at all. The software honestly marks them
-unschedulable rather than forcing them in; observe them in the season
-when they transit late at night.
+**Q: Can far-southern targets (e.g. WR7/WR116 at Dec = −13°) be
+scheduled at all?**
+A: Yes, but only barely. From Nanshan at 43.5°N they culminate at
+~34°, so the visible window is very narrow — but because the
+schedulable unit is a single exposure, the optimizer can slip
+individual exposures into that window and accumulate them across
+nights (both complete in the example full-year campaign). If transit
+falls in twilight or daylight for the whole season they remain
+unschedulable; truly invisible targets like CentaurusA (Dec = −43°,
+culmination ~3.5°) are honestly marked unschedulable rather than
+forced in. Observe such targets in the season when they transit late
+at night.
 
 ---
 
