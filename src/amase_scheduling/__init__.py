@@ -1,4 +1,4 @@
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from amase_scheduling.observatory import NanshanObserver, format_lst, lst_hours
 from amase_scheduling.target import load_targets, Target

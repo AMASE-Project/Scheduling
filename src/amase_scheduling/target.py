@@ -4,7 +4,7 @@ import re
 from astropy.coordinates import SkyCoord
 
 
-REQUIRED_COLUMNS = ["name", "ra", "dec", "priority", "exp_time", "n_dither", "n_exposure"]
+REQUIRED_COLUMNS = ["name", "ra", "dec", "priority", "exp_time", "n_dither", "n_set"]
 DEFAULT_GROUP = "Untitle"
 ALLOWED_N_DITHER = (1, 3, 9, 27)
 MAX_EXP_TIME_SEC = 3600.0
@@ -17,23 +17,27 @@ class Target:
     priority: float
     exp_time: float
     n_dither: int
-    n_exposure: int
+    n_set: int
     group: str = DEFAULT_GROUP
 
     @property
     def block_duration_sec(self) -> float:
-        return self.exp_time * self.n_dither
+        return self.exp_time
+
+    @property
+    def n_exposures(self) -> int:
+        return self.n_dither * self.n_set
 
     @property
     def total_time_sec(self) -> float:
-        return self.block_duration_sec * self.n_exposure
+        return self.block_duration_sec * self.n_exposures
 
     def __repr__(self):
         return (
             f"Target(name={self.name!r}, ra={self.coord.ra.deg:.4f}, "
             f"dec={self.coord.dec.deg:.4f}, priority={self.priority}, "
             f"exp_time={self.exp_time}s, n_dither={self.n_dither}, "
-            f"n_exposure={self.n_exposure})"
+            f"n_set={self.n_set})"
         )
 
 
@@ -140,16 +144,16 @@ def _validate_csv_row(row_lower: dict, source: str, rowno: int) -> Target:
             source, rowno,
             f"n_dither must be one of {ALLOWED_N_DITHER}, got {n_dither}",
         )
-    n_exposure = _parse_int(row_lower["n_exposure"], "n_exposure", source, rowno)
-    if n_exposure < 1:
-        _row_error(source, rowno, f"n_exposure must be >= 1, got {n_exposure}")
+    n_set = _parse_int(row_lower["n_set"], "n_set", source, rowno)
+    if n_set < 1:
+        _row_error(source, rowno, f"n_set must be >= 1, got {n_set}")
     return Target(
         name=name,
         coord=coord,
         priority=priority,
         exp_time=exp_time,
         n_dither=n_dither,
-        n_exposure=n_exposure,
+        n_set=n_set,
         group=row_lower.get("group", "").strip() or DEFAULT_GROUP,
     )
 

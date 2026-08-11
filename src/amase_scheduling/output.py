@@ -24,7 +24,7 @@ MAX_TABLE_ROWS = 20
 CSV_HEADER = [
     "date",
     "target",
-    "visit",
+    "exposure",
     "obs_start_utc",
     "obs_end_utc",
     "obs_start_local",
@@ -59,7 +59,7 @@ def _block_row(date: str, block: ScheduledBlock, longitude=LONGITUDE) -> dict:
     return {
         "date": date,
         "target": block.target_name,
-        "visit": block.visit,
+        "exposure": block.exposure,
         "obs_start_utc": start_iso,
         "obs_end_utc": end_iso,
         "obs_start_local": _utc_to_local(start_iso),
@@ -161,7 +161,7 @@ def load_schedule_csvs(
                 target_name=name,
                 target_index=index_of.get(name, 0),
                 target_coord=coord_of.get(name),
-                visit=int(row["visit"]),
+                exposure=int(row["exposure"]),
                 start_time=Time(row["obs_start_utc"]),
                 end_time=Time(row["obs_end_utc"]),
                 altitude=float(row["altitude_deg"]),
@@ -208,7 +208,7 @@ def _night_detail_lines(schedule: Schedule, longitude=LONGITUDE) -> list[str]:
     elif night.blocks:
         col_widths = {
             "target": MAX_NAME_LEN,
-            "visit": 5,
+            "exposure": 8,
             "obs_start_utc": 20,
             "obs_end_utc": 20,
             "lst": 11,
@@ -300,12 +300,12 @@ def _summary_lines(schedule: Schedule) -> list[str]:
     n_untouched = sum(1 for p in schedule.progress if p.done == 0)
     total_req = sum(p.required for p in schedule.progress)
     total_done = sum(p.done for p in schedule.progress)
-    visit_rate = total_done / total_req if total_req else 0
+    exposure_rate = total_done / total_req if total_req else 0
     lines.append(
         f"Targets: {n_done}/{n_total} fully completed, "
         f"{n_partial} partial, {n_untouched} untouched"
     )
-    lines.append(f"Visits: {total_done}/{total_req} completed ({visit_rate:.0%})")
+    lines.append(f"Exposures: {total_done}/{total_req} completed ({exposure_rate:.0%})")
     lines.append(
         f"Total observing time: {schedule.total_obs_time:.0f} min "
         f"({schedule.total_obs_time / 60:.1f} h)"

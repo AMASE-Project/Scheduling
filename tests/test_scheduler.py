@@ -13,15 +13,18 @@ def test_single_night_blocks_feasible(night_result):
         assert b.end_time <= night.night_end
     for a, b in zip(ordered, ordered[1:]):
         gap_min = (b.start_time - a.end_time).to_value("min")
-        assert gap_min >= OVERHEAD_MIN - 1e-6
+        if a.target_name == b.target_name:
+            assert gap_min >= -1e-6
+        else:
+            assert gap_min >= OVERHEAD_MIN - 1e-6
 
 
-def test_visit_caps_respected(night_result, targets):
-    required = {t.name: t.n_exposure for t in targets}
-    visits = {}
+def test_exposure_caps_respected(night_result, targets):
+    required = {t.name: t.n_exposures for t in targets}
+    exposures = {}
     for night in night_result.nights:
         for b in night.blocks:
-            visits[b.target_name] = visits.get(b.target_name, 0) + 1
-    assert visits, "expected at least one visit"
-    for name, n in visits.items():
+            exposures[b.target_name] = exposures.get(b.target_name, 0) + 1
+    assert exposures, "expected at least one exposure"
+    for name, n in exposures.items():
         assert n <= required[name]

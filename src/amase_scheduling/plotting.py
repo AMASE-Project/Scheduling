@@ -255,7 +255,7 @@ def plot_campaign_figure(
     Bottom: completion bars. With `targets`: per-target bars clustered by
     group when <= GROUP_PANEL_THRESHOLD targets, otherwise one aggregated
     bar per group. Without `targets`: legacy per-target bars sorted by
-    completion (only targets with visits when > MAX_CAMPAIGN_TARGETS).
+    completion (only targets with exposures when > MAX_CAMPAIGN_TARGETS).
     """
     if observer is None:
         observer = NanshanObserver()
@@ -391,7 +391,7 @@ def plot_campaign_figure(
         ax2.set_yticklabels(labels, fontsize=fs)
         ax2.set_ylim(-0.7, len(labels) - 0.3)
         ax2.set_xlim(0, xmax * 1.25)
-    ax2.set_xlabel("Visits completed / required")
+    ax2.set_xlabel("Exposures completed / required")
 
     named = [g for g in groups if g]
     if targets is not None and len(named) > 1:

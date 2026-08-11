@@ -87,18 +87,22 @@ at slot start times.
 
 ### 2.3 Blocks and overhead
 
-An observation of target `i` is an indivisible **block**:
+An observation of target `i` is an indivisible **block** of one exposure:
 
 ```
-block_sec(i) = exp_time_i × n_dither_i        (dithers are back-to-back)
+block_sec(i) = exp_time_i                          (one exposure)
 B_i = max(1, ceil(block_sec(i) / δ))          (block length in slots)
 O   = 2                                        (10 min overhead)
 ```
 
-After every block the telescope needs O = 2 slots (10 min) of overhead
-(slew + settle) during which no other block may start. A block starting
-at slot `k` therefore occupies `[k, k + B_i + O)`, of which `B_i` slots
-are productive. The trailing overhead slots need not be visible — the
+Dither sets are *not* kept together: the `n_dither × n_set` exposures of
+a target are independent blocks, schedulable at any time on any night.
+
+Overhead (slew + settle) is charged only on a **target switch**: after a
+block of target `i` ending at slot `k + B_i`, the next `O` slots are
+blocked for other targets — but if another block of the *same* target
+starts exactly at `k + B_i` the two exposures chain with zero gap and no
+overhead. The trailing overhead slots need not be visible — the
 telescope may point anywhere while slewing.
 
 ---
@@ -110,7 +114,7 @@ telescope may point anywhere while slewing.
 | Altitude | target alt > 30° at slot time |
 | Sun | Sun alt < −12° (nautical darkness) at slot time |
 | Moon | passes if **any** of: illumination < 0.25; Moon below horizon; Moon–target separation > 30° |
-| Overhead | 10 min after every block (see §2.3) |
+| Overhead | 10 min on every target switch; same-target adjacent exposures chain for free (see §2.3) |
 
 The Moon rule is a three-way disjunction — in particular, a bright Moon
 below the horizon never vetoes a target.
@@ -127,12 +131,13 @@ below the horizon never vetoes a target.
 | `ra`, `dec` | Sky position (decimal degrees or sexagesimal) |
 | `priority` | Static priority weight; larger wins. Rank-style catalogs (1 = highest) are converted with `invert_priorities()` / `--invert-priority` (w = p_max + p_min − p) |
 | `exp_time` | Single exposure time (s) |
-| `n_dither` | Dither count per visit (back-to-back, indivisible) |
-| `n_exposure` | **Season-total** visit demand; carried across nights, decremented per scheduled block; targets at zero graduate |
+| `n_dither` | Dither count per set; dithers are independent exposures, schedulable separately |
+| `n_set` | Number of dither sets; **season-total** exposure demand = `n_dither × n_set`, carried across nights and decremented per scheduled exposure; targets at zero graduate |
 | `group` | Grouping label for plot coloring/statistics; defaults to `Untitle` |
 
-Derived quantities: `block_duration_sec = exp_time × n_dither`;
-`total_time_sec = block × n_exposure`.
+Derived quantities: `block_duration_sec = exp_time`;
+`n_exposures = n_dither × n_set`;
+`total_time_sec = exp_time × n_dither × n_set`.
 
 ### 4.2 Input validation (`target.py`)
 
@@ -147,7 +152,7 @@ raised for:
   next lower unit before parsing;
 - `exp_time` outside `(0, 3600] s`;
 - `n_dither` not in `{1, 3, 9, 27}`;
-- `n_exposure < 1`.
+- `n_set < 1`.
 
 `priority` is unconstrained (any float).
 
@@ -218,8 +223,8 @@ q(i, k) = sin( alt_i at block midpoint of start k ) / sin( alt_max_i tonight )  
 |--------|---------|
 | `N` | number of schedulable targets (unschedulable ones removed) |
 | `T` | number of slots tonight |
-| `K_i` | visits still required for target `i` (campaign: remaining; single night: `n_exposure_i`) |
-| `B_i` | block length in slots; `O = 2` overhead slots |
+| `K_i` | exposures still required for target `i` (campaign: remaining; single night: `n_dither_i × n_set_i`) |
+| `B_i` | block length in slots (one exposure); `O = 2` overhead slots, waived between same-target adjacent blocks |
 | `w_i` | priority weight |
 | `ε`, `γ` | small bonus weights (defaults 1e-3, 1e-2) |
 | `α` | transit-preference strength ∈ [0, 1] (default 0.5) |
@@ -231,36 +236,46 @@ q(i, k) = sin( alt_i at block midpoint of start k ) / sin( alt_max_i tonight )  
 | `x[i][k] ∈ {0,1}` | one block of target `i` starts at slot `k` | only if `valid_start[i][k]` |
 | `y[i] ∈ {0,1}` | target `i` gets ≥ 1 block tonight | always |
 | `c[i] ∈ {0,1}` | all `K_i` remaining blocks of target `i` fit tonight | if `γ > 0` and the target has variables |
+| `chain[i][k] ∈ {0,1}` | blocks of target `i` start at both `k` and `k + B_i` (adjacent same-target pair → overhead waived) | only if both `k` and `k + B_i` are valid starts |
 
 **Merging over the exposure index.** Blocks of one target are
 physically identical (same duration, same reward), so the model does
-not distinguish "the j-th visit". Variables `x[i][j][k]` would create
-`K_i!` symmetric copies of every schedule, sending branch-and-bound
-wandering through equivalent permutations. Instead `x[i][k]` records
-*whether a block starts at slot k*, with the visit count enforced by
-the capacity constraint. This cuts the variable count ≈ 3× and speeds
-up solving ≈ 8× (measured: 300 targets, winter night, 9.2 s → 1.1 s).
-The `visit` numbers in the output are assigned chronologically during
-decoding — display labels only.
+not distinguish "the j-th exposure". Variables `x[i][j][k]` would
+create `K_i!` symmetric copies of every schedule, sending
+branch-and-bound wandering through equivalent permutations. Instead
+`x[i][k]` records *whether a block starts at slot k*, with the
+exposure count enforced by the capacity constraint. This cuts the
+variable count ≈ 3× and speeds up solving ≈ 8× (measured: 300
+targets, winter night, 9.2 s → 1.1 s). The `exposure` numbers in the
+output are assigned chronologically during decoding — display labels
+only.
 
 ### 6.3 Constraints
 
 1. **Capacity** (`cap_i`): at most `K_i` blocks per target
    `∀i: Σ_k x[i][k] ≤ K_i`
 2. **Slot exclusivity** (`slot_t`) — the core constraint; at any time
-   at most one block occupies the telescope, including its overhead
-   tail:
-   `∀t: Σ_{i,k : k ≤ t < k + B_i + O} x[i][k] ≤ 1`
-   Built with an inverted index: each variable registers itself only
-   into the `B_i + O` slots it covers (clipped at `T` near dawn),
-   instead of scanning all variable–slot pairs (≈ 3× faster model
-   build).
-3. **Linking** (`link_i`): `Σ_k x[i][k] ≥ y[i]` — `y` may be 1 only if
+   at most one block occupies the telescope, and the overhead tail of
+   a non-chained block also blocks the slot:
+   `∀t: Σ_{i,k : k ≤ t < k+B_i} x[i][k]  +  Σ_{i,k : k+B_i ≤ t < k+B_i+O} (x[i][k] − chain[i][k]) ≤ 1`
+   The first sum counts productive occupancy; the second counts
+   overhead occupancy, which vanishes exactly when a same-target
+   neighbour follows immediately. Built with an inverted index: each
+   variable registers itself only into the `B_i + O` slots it covers
+   (clipped at `T` near dawn), instead of scanning all variable–slot
+   pairs (≈ 3× faster model build).
+3. **Chaining** (`chain_a/b`): `chain[i][k] ≤ x[i][k]` and
+   `chain[i][k] ≤ x[i][k + B_i]`. Only upper bounds are needed: chain
+   carries no objective weight and appears with negative sign in
+   `≤` constraints, so the solver pushes it to
+   `min(x[i][k], x[i][k + B_i])` — precisely "overhead waived iff both
+   adjacent same-target blocks exist".
+4. **Linking** (`link_i`): `Σ_k x[i][k] ≥ y[i]` — `y` may be 1 only if
    a block exists. (The reverse direction is unnecessary: the `+ε·y[i]`
    term raises `y[i]` freely once a block exists.)
-4. **No viable start** (`nosched_i`): a target with no valid start slot
+5. **No viable start** (`nosched_i`): a target with no valid start slot
    has `y[i] = 0` fixed and no `x` variables at all.
-5. **Completion** (`complete_i`, only if `γ > 0`):
+6. **Completion** (`complete_i`, only if `γ > 0`):
    `Σ_k x[i][k] ≥ K_i · c[i]`
    Together with capacity this clamps `Σ_k x[i][k] = K_i` whenever
    `c[i] = 1`; the `+γ·c[i]` reward makes the solver set `c[i] = 1`
@@ -276,11 +291,11 @@ max   Σ_{i,k}  w_i · B_i · [(1 − α) + α · q(i,k)] · x[i][k]     (main t
 
 **Main term.** Reward is proportional to block duration, so the
 objective is effectively "priority-weighted allocated telescope time".
-Long blocks are naturally efficient: a block occupies `B_i + O` slots
-to deliver `B_i` productive ones, a fraction `B_i/(B_i + O)` (92% for
-a 110-min block, 33% for a 5-min one). Overhead amortization is thus
-encoded economically rather than as extra constraints — the model
-prefers few long slews, matching real observing practice.
+Because overhead is charged only at target switches (via `chain`), the
+model economically prefers long same-target runs — a run of `m`
+exposures of one target costs `m·B_i + O` slots instead of
+`m·(B_i + O)` — matching real observing practice (dither in place,
+slew rarely) without any extra constraints.
 
 **Transit weighting α.** `q(i,k)` scales each block's reward between
 `(1−α)·w_i·B_i` (away from transit) and `w_i·B_i` (at transit). This is
@@ -293,10 +308,10 @@ converges *faster*.
 
 **ε and γ** are orders of magnitude below any main-term reward, so they
 only break ties — towards covering more distinct targets (ε) and
-towards finishing a target's remaining visits in one night (γ).
+towards finishing a target's remaining exposures in one night (γ).
 Neither can overturn a clearly better main-term solution. (Verified
 safe for weights w ∈ {1, 2, 3} with the default ε, γ; it is the `w·B`
-scale, not the bonuses, that drives long-block dominance.)
+scale, not the bonuses, that drives block selection.)
 
 ### 6.5 Worked example
 
@@ -310,18 +325,23 @@ T = 10 slots, O = 2, ε = 0.001, γ = 0.01. Three targets:
 
 Valid starts: A ∈ {0,1}, B ∈ {2,3,4,5}, C ∈ {5,6,7}.
 
-**Optimal solution**: A@0 (occupies [0,4)), B@4 (occupies [4,7)),
-C@7 (occupies [7,11); the trailing overhead beyond slot 10 is clipped
-harmlessly).
+**Optimal solution**: A@0 (productive [0,2), overhead [2,4)),
+B@4 and B@5 **chained** (productive slots 4 and 5 back-to-back — the
+same-target adjacency waives the overhead between them; B@5's overhead
+tail occupies [6,8)). C cannot start: its valid starts {5,6,7} all
+collide with the B run, so it stays unscheduled.
 
 ```
-main term:   5·2 + 8·1 + 3·2 = 24
-diversity:   ε·3             = 0.003
-completion:  γ·(c_A + c_C)   = 0.02     (B got only 1 of 2 blocks → c_B = 0)
-total: 24.023
+main term:   5·2 + 8·1 + 8·1   = 26
+diversity:   ε·2               = 0.002   (only A and B covered)
+completion:  γ·(c_A + c_B)     = 0.02    (A done; both B exposures fit → c_B = 1)
+total: 26.022
 ```
 
-The runner-up (A@1, B@5) scores 18 + 2ε + γ = 18.012 — strictly worse.
+The runner-up (A@0, B@4, C@7 — cover all three targets but leave B
+half-done) scores 24 + 3ε + 2γ = 24.023 — strictly worse. Note the
+winning move was *impossible* before chaining: B@4 followed by B@5 used
+to collide with B@4's own overhead tail.
 
 Decoded observing sequence (slot 0 = 18:00 UTC):
 
@@ -329,7 +349,8 @@ Decoded observing sequence (slot 0 = 18:00 UTC):
 UTC start  UTC end   Duration  Target
 18:00      18:10     10 min    A     (telescope busy until 18:20 incl. overhead)
 18:20      18:25      5 min    B
-18:35      18:45     10 min    C
+18:25      18:30      5 min    B     (same target: chained, no slew)
+                                  (telescope busy until 18:40 incl. overhead)
 ```
 
 ---
@@ -356,10 +377,11 @@ Typical size (300 targets, winter night): ≈ 13k binary variables,
 
 ### 8.1 State semantics
 
-`n_exposure` is the **season-total demand**. A `remaining[i]` counter
-carries across nights, decremented once per scheduled block; targets
-hitting zero graduate and no longer enter subsequent nights' models.
-Visits of one target carry no minimum-gap constraint; priorities are
+`n_dither × n_set` is the **season-total exposure demand**. A
+`remaining[i]` counter carries across nights, decremented once per
+scheduled exposure; targets hitting zero graduate and no longer enter
+subsequent nights' models. Exposures of one target carry no
+minimum-gap constraint (same night or across nights); priorities are
 static.
 
 ### 8.2 Weather
@@ -374,7 +396,7 @@ matrix would be all zeros. `clear_prob = 1` disables weather entirely
 
 ```python
 def schedule(targets, start, end=None, clear_prob=1.0, seed=None, ...):
-    remaining = [t.n_exposure for t in targets]
+    remaining = [t.n_exposures for t in targets]
     weather   = WeatherModel(clear_prob, seed)
     if n_nights > 1: capacity_check(...)
     for date in nights(start, end or start):     # serial: night N+1 depends on N
@@ -389,9 +411,11 @@ def schedule(targets, start, end=None, clear_prob=1.0, seed=None, ...):
 ```
 
 - **Single-night degeneracy**: one date, `clear_prob = 1.0`,
-  `remaining = n_exposure` — the same code path, no special branches.
+  `remaining = n_exposures` — the same code path, no special branches.
 - **Capacity warning** (multi-night only): total demand
-  `Σ exp_time·n_dither·n_exposure` vs expected available time
+  `Σ exp_time·n_dither·n_set` of exposure time plus an overhead
+  estimate `O·δ·Σ n_set` (chaining lets each set observe in roughly
+  one run, paying one slew per set) vs expected available time
   `n_nights × mean night length × clear_prob`, reported up front when
   the campaign is oversubscribed.
 
@@ -403,7 +427,7 @@ A single season-long MILP would be enormous and is unnecessary:
 - **The objective is night-separable** given `remaining` — tonight's
   reward does not depend on when other nights' blocks fall.
 - **No inter-night constraints** exist in the problem specification
-  (no minimum gap between visits of one target, no deadlines).
+  (no minimum gap between exposures of one target, no deadlines).
 
 Hence a sequence of per-night MILPs is equivalent to one global MILP
 under deterministic weather. The only suboptimality comes from the
@@ -436,7 +460,7 @@ One report structure for any campaign length:
    uses a compact per-night summary table;
 3. target completion table (sorted by fraction; truncated to the 20
    most complete with an omission note, full table in the CSV);
-4. totals (clear nights, completed/partial/untouched targets, visits,
+4. totals (clear nights, completed/partial/untouched targets, exposures,
    total observing time).
 
 ### 9.2 The CSV trio (interchange format)
@@ -445,7 +469,7 @@ Written by `amase-schedule -o FILE`:
 
 | File | Columns | Content |
 |------|---------|---------|
-| `FILE` (blocks) | `date, target, visit, obs_start_utc, obs_end_utc, obs_start_local, obs_end_local, lst_start, lst_end, duration_min, altitude_deg, azimuth_deg, moon_sep_deg` | one row per scheduled block; LST = apparent sidereal time, HH:MM mod 24 |
+| `FILE` (blocks) | `date, target, exposure, obs_start_utc, obs_end_utc, obs_start_local, obs_end_local, lst_start, lst_end, duration_min, altitude_deg, azimuth_deg, moon_sep_deg` | one row per scheduled block; LST = apparent sidereal time, HH:MM mod 24 |
 | `<stem>_targets.csv` | `target, required, done, fraction, nights_observed, obs_hours` | per-target campaign progress |
 | `<stem>_nights.csv` | `date, clear, night_start_utc, night_end_utc, dark_start_utc, dark_end_utc, n_blocks, n_targets, obs_hours, n_unschedulable` | nightly index; window columns are physical and filled for cloudy nights too, distinguishing weather loss from clear-but-empty nights |
 

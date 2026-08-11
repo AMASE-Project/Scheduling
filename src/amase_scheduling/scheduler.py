@@ -13,7 +13,7 @@ from amase_scheduling.visibility import (
     NightVisibility,
 )
 from amase_scheduling.cache import VisibilityCache, compute_night_visibility
-from amase_scheduling.milp import build_milp, solve_milp
+from amase_scheduling.milp import OVERHEAD_SLOTS, build_milp, solve_milp
 from amase_scheduling.weather import WeatherModel
 
 
@@ -22,7 +22,7 @@ class ScheduledBlock:
     target_name: str
     target_index: int
     target_coord: SkyCoord
-    visit: int
+    exposure: int
     start_time: Time
     end_time: Time
     altitude: float
@@ -147,7 +147,7 @@ class Scheduler:
         if initial_remaining is not None:
             remaining = np.asarray(initial_remaining, dtype=int).copy()
         else:
-            remaining = np.array([t.n_exposure for t in targets], dtype=int)
+            remaining = np.array([t.n_exposures for t in targets], dtype=int)
         required = remaining.copy()
 
         result = Schedule(
@@ -300,12 +300,12 @@ class Scheduler:
 
         scheduled_names = set()
         blocks = []
-        visit_counter: dict[int, int] = {}
+        exposure_counter: dict[int, int] = {}
         for new_i, k in raw_schedule:
             old_i = idx_map[new_i]
             target = targets[old_i]
             B = int(B_sub[new_i])
-            visit_counter[old_i] = visit_counter.get(old_i, 0) + 1
+            exposure_counter[old_i] = exposure_counter.get(old_i, 0) + 1
 
             start_time = t0[k]
             end_time = t0[k] + TimeDelta(B * SLOT_MINUTES * 60, format="sec")
@@ -322,7 +322,7 @@ class Scheduler:
                     target_name=target.name,
                     target_index=old_i,
                     target_coord=target.coord,
-                    visit=visit_counter[old_i],
+                    exposure=exposure_counter[old_i],
                     start_time=start_time,
                     end_time=end_time,
                     altitude=float(altaz.alt.deg),
@@ -352,6 +352,8 @@ class Scheduler:
         self, targets: list[Target], n_nights: int, clear_prob: float
     ) -> str | None:
         demand_min = sum(t.total_time_sec / 60 for t in targets)
+        overhead_min = sum(OVERHEAD_SLOTS * SLOT_MINUTES * t.n_set for t in targets)
+        demand_min += overhead_min
         sample_dates = [
             Time("2026-01-01", format="isot"),
             Time("2026-04-01", format="isot"),

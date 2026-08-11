@@ -20,7 +20,15 @@ def build_milp(
     Variables are merged over the exposure index j: x[i,k]=1 means one block
     of target i starts at slot k. Since a slot admits at most one block, the
     per-j binaries would only add K_i! symmetric copies of every solution;
-    the cap sum_k x[i,k] <= K_i enforces the visit count instead.
+    the cap sum_k x[i,k] <= K_i enforces the exposure count instead.
+
+    Slew overhead (OVERHEAD_SLOTS) is charged only on a target switch:
+    chain[i,k]=1 iff blocks of target i start at both k and k+B_i, in which
+    case the post-block overhead is waived. The slot constraint counts
+    (x[i,k] - chain[i,k]) over the overhead window [k+B_i, k+B_i+2).
+    chain needs only upper bounds chain <= x[i,k], chain <= x[i,k+B_i]:
+    it carries no objective weight and only relaxes <= constraints, so the
+    solver pushes it to min(x[i,k], x[i,k+B_i]) automatically.
 
     If `quality` (N×T, same row order as valid_start) and alpha > 0 are
     given, each block's objective coefficient is time-weighted toward the
@@ -71,17 +79,33 @@ def build_milp(
         + gamma * pulp.lpSum(c_vars)
     ), "Objective"
 
-    slot_vars: list[list[pulp.LpVariable]] = [[] for _ in range(T)]
     B_list = [int(b) for b in block_slots]
+
+    chain_map: dict[tuple[int, int], pulp.LpVariable] = {}
+    for i in range(N):
+        B = B_list[i]
+        valid_set = set(np.where(valid_start[i])[0].tolist())
+        for k in valid_set:
+            if (k + B) in valid_set:
+                ch = pulp.LpVariable(f"chain_{i}_{k}", cat=pulp.LpBinary)
+                chain_map[(i, k)] = ch
+                prob += ch <= var_map[(i, k)], f"chain_a_{i}_{k}"
+                prob += ch <= var_map[(i, k + B)], f"chain_b_{i}_{k}"
+
+    slot_terms: list[list] = [[] for _ in range(T)]
     for (i, k), var in var_map.items():
-        t_end = k + B_list[i] + OVERHEAD_SLOTS
-        if t_end > T:
-            t_end = T
-        for t in range(k, t_end):
-            slot_vars[t].append(var)
+        B = B_list[i]
+        for t in range(k, min(k + B, T)):
+            slot_terms[t].append(var)
+        oh_end = min(k + B + OVERHEAD_SLOTS, T)
+        for t in range(k + B, oh_end):
+            slot_terms[t].append(var)
+            ch = chain_map.get((i, k))
+            if ch is not None:
+                slot_terms[t].append(-ch)
     for t in range(T):
-        if slot_vars[t]:
-            prob += pulp.lpSum(slot_vars[t]) <= 1, f"slot_{t}"
+        if slot_terms[t]:
+            prob += pulp.lpSum(slot_terms[t]) <= 1, f"slot_{t}"
 
     solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
     return prob, var_map, solver

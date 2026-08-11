@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-08-11
+
+### Changed
+
+- **Schedulable unit is now a single exposure** (`block = exp_time`);
+  dither sets are no longer kept contiguous. The season demand is
+  `n_dither × n_set` independent exposures, schedulable at any time on
+  any night. Finer granularity packs narrow visibility windows that a
+  whole dither sequence could not fit.
+- **Overhead is charged only on target switches**: same-target adjacent
+  exposures chain with zero gap. New `chain[i,k]` binaries waive the
+  2-slot slew tail; the slot-exclusivity constraint counts
+  `x[i,k] − chain[i,k]` over the overhead window (chain needs only
+  upper bounds — the solver maximizes it for free).
+- **Input column renamed `n_exposure` → `n_set`** (number of dither
+  sets). New derived quantity `Target.n_exposures = n_dither × n_set`;
+  `block_duration_sec = exp_time`.
+- Output wording visits → exposures (blocks CSV column `exposure`,
+  report summary, campaign figure axis); capacity warning adds a
+  per-set slew estimate.
+- Campaign results are **not comparable with 0.1.0** and visibility
+  caches must be rebuilt. On the 42-target example (clear 0.5,
+  seed 42): half-year 30 → 35 targets completed, full year 37 → 41
+  (only CentaurusA remains unschedulable), delivered time 403 → 494 h.
+
+### Added
+
+- LST start/end columns in the blocks CSV and LST axes on figures
+  (0dca49d).
+- `tests/test_milp.py`: chain-semantics tests (same-target packing,
+  switch overhead, mixed runs).
+
 ## [0.1.0] - 2026-07-30
 
 Initial release.

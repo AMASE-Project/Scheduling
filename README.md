@@ -96,24 +96,26 @@ are required except `group`:
 | `dec` | deg / sexagesimal | Declination. Accepts `-13.22`, `+04d59m54s` |
 | `priority` | float | Priority **weight** — larger wins. If your catalog uses rank semantics (1 = highest), invert it to weights with `--invert-priority` |
 | `exp_time` | float (s) | Single exposure time in seconds, **≤ 3600 s** |
-| `n_dither` | int | Dither count (executed back-to-back, indivisible), **must be 1 / 3 / 9 / 27** |
-| `n_exposure` | int | Number of independent visits (**season-total demand**, accumulated across nights), **≥ 1** |
+| `n_dither` | int | Dither count per set, **must be 1 / 3 / 9 / 27** |
+| `n_set` | int | Number of dither sets (**season-total demand**, accumulated across nights), **≥ 1** |
 | `group` | string | Target group (used for plot coloring / statistics). **Optional: a missing column or empty cell becomes `Untitle`** |
 
 **Input validation**: any missing column or empty cell other than `group`
 is an error naming the row and field; `ra`/`dec` accept only the two
 forms above (fractional-minute spellings such as `05h40.9m0.0s` are
 normalized by carrying into seconds); out-of-range `exp_time`,
-`n_dither`, `n_exposure` are likewise rejected.
+`n_dither`, `n_set` are likewise rejected.
 
-**Block duration** = `exp_time × n_dither`. In multi-night runs each
-scheduled visit decrements `n_exposure`; a target that reaches zero
-graduates and no longer occupies nights.
+**Schedulable unit** = one exposure of `exp_time` seconds — dither sets
+are *not* kept contiguous; the season demand is `n_dither × n_set`
+independent exposures, schedulable at any time on any night. In
+multi-night runs each scheduled exposure decrements the remaining count;
+a target that reaches zero graduates and no longer occupies nights.
 
 Example (`example/targets.csv`):
 
 ```csv
-name,ra,dec,priority,exp_time,n_dither,n_exposure,group
+name,ra,dec,priority,exp_time,n_dither,n_set,group
 NGC4258,184.739583,47.303972,1,3600,9,1,Zongnan Li
 Rosette nebula,06h31m50.0s,+04d59m54s,1,720,9,6,Xihan Ji
 IC434,05h40.9m0.0s,-01d30m00s,1,150,9,72,TK
@@ -145,7 +147,7 @@ amase-schedule targets.csv --start 2027-04-01      # --end omitted = single nigh
 | `--invert-priority` | off | Use when the list's priority is a rank (1 = highest): invert to weights (1 → highest weight) |
 | `--seed N` | random | Weather RNG seed. **Identical seed ⇒ fully reproducible results** |
 | `--eps X` | 0.001 | Diversity bonus weight. On ties, prefer covering more distinct targets |
-| `--gamma X` | 0.01 | Completion bonus weight. Encourages finishing all of a target's remaining visits within one night |
+| `--gamma X` | 0.01 | Completion bonus weight. Encourages finishing all of a target's remaining exposures within one night |
 | `--alpha X` | 0.5 | **Transit-preference strength** (0–1). 0 = time-blind; larger values push blocks towards transit |
 | `--time-limit S` | 60 | MILP solver time limit per night (seconds) |
 | `--cache FILE` | none | Load a visibility cache (`.npz`) produced by `amase-precompute`, skipping repeated astronomy calculations |
@@ -157,10 +159,10 @@ amase-schedule targets.csv --start 2027-04-01      # --end omitted = single nigh
 **Console**: a unified campaign report (a single night is a 1-night
 campaign): night section (single night → full block table; multi-night →
 compact per-night summary) → target completion table → totals
-(clear nights, completed/partial/untouched targets, visits, total
+(clear nights, completed/partial/untouched targets, exposures, total
 observing time).
 
-**Blocks CSV columns**: `date, target, visit, obs_start_utc, obs_end_utc,
+**Blocks CSV columns**: `date, target, exposure, obs_start_utc, obs_end_utc,
 obs_start_local, obs_end_local, lst_start, lst_end, duration_min, altitude_deg,
 azimuth_deg, moon_sep_deg` (local = UTC+8; LST = apparent local sidereal time,
 HH:MM mod 24).
@@ -313,11 +315,11 @@ daylight / Moon blocking) or *unselected* (visible but outcompeted by
 higher-value work). The `amase-plot night` track figure shows the
 reason at a glance; `amase-plot track` diagnoses a single target.
 
-**Q: Why did a target finish only part of its `n_exposure`?**
-A: `n_exposure` is the season-total demand. Nights shorter than one
-block, weather losses, or competition from higher-value targets all
-leave visits unscheduled. The campaign report's completion column shows
-the fraction.
+**Q: Why did a target finish only part of its `n_set`?**
+A: `n_set × n_dither` is the season-total exposure demand. Nights too
+short to fit an exposure, weather losses, or competition from
+higher-value targets all leave exposures unscheduled. The campaign
+report's completion column shows the fraction.
 
 **Q: Are results fully reproducible?**
 A: Yes. Same target list + same `--seed` + same parameters ⇒ identical
