@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -125,6 +126,7 @@ class Scheduler:
         initial_remaining: np.ndarray | None = None,
         visibility_cache: VisibilityCache | None = None,
         verbose: bool = False,
+        progress_callback: Callable[[int, int, str], None] | None = None,
     ) -> Schedule:
         t_start = Time(start, format="isot", scale="utc")
         t_end = Time(end, format="isot", scale="utc") if end else t_start
@@ -176,6 +178,8 @@ class Scheduler:
                 result.nights.append(NightPlan(date=date_str, clear=False))
                 if verbose:
                     print(f"{date_str}: cloudy")
+                if progress_callback is not None:
+                    progress_callback(night_idx, n_nights, date_str)
                 continue
 
             active_idx = np.where(remaining > 0)[0]
@@ -183,6 +187,8 @@ class Scheduler:
                 result.nights.append(NightPlan(date=date_str, clear=True))
                 if verbose:
                     print(f"{date_str}: all targets complete")
+                if progress_callback is not None:
+                    progress_callback(night_idx, n_nights, date_str)
                 continue
 
             active_targets = [targets[i] for i in active_idx]
@@ -225,6 +231,8 @@ class Scheduler:
                     f"{date_str}: {len(night.blocks)} blocks, "
                     f"{night.total_obs_time:.0f} min"
                 )
+            if progress_callback is not None:
+                progress_callback(night_idx, n_nights, date_str)
 
         return result
 

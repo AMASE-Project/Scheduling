@@ -32,14 +32,19 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "pytest-cov"]
+web = ["fastapi", "uvicorn[standard]"]
 
 [project.scripts]
 amase-schedule = "amase_scheduling.cli:main"
 amase-precompute = "amase_scheduling.cli_precompute:main"
 amase-plot = "amase_scheduling.cli_plot:main"
+amase-web = "amase_scheduling.web.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"amase_scheduling" = ["web/static/*", "web/data/*.csv"]
 
 [tool.setuptools.dynamic]
 version = {attr = "amase_scheduling.__version__"}

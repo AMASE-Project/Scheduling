@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMASE-P Observation Scheduler</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path fill='%23e3b341' d='M16 2l3.4 8.2L28 14l-8.6 3.8L16 26l-3.4-8.2L4 14l8.6-3.8z'/></svg>">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="brand">
+    <span class="brand-dot" aria-hidden="true"></span>
+    <span class="brand-name">AMASE-P Observation Scheduler</span>
+  </div>
+  <div class="header-right">
+    <div class="site-meta">
+      <span class="site-name">Nanshan Observatory</span>
+      <span class="site-coords">87.175&deg;E &middot; 43.472&deg;N &middot; 2080 m</span>
+    </div>
+    <button class="btn btn-exit" id="exitBtn" type="button" title="Stop the local server">Exit</button>
+    <div class="exit-popover" id="exitPopover" hidden>
+      <p class="exit-popover-msg" id="exitPopoverMsg"></p>
+      <div class="exit-popover-actions">
+        <button class="btn btn-danger" id="exitConfirmBtn" type="button">Stop server</button>
+        <button class="btn" id="exitCancelBtn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+
+  <!-- ===================== Input section ===================== -->
+  <section class="input-grid" aria-label="Scheduling inputs">
+
+    <!-- Targets -->
+    <div class="card">
+      <div class="card-head">
+        <h2>Targets</h2>
+        <div class="card-actions">
+          <button class="btn" id="uploadBtn" type="button">Upload CSV</button>
+          <button class="btn" id="exampleBtn" type="button">Load Example</button>
+          <input type="file" id="csvFile" accept=".csv,text/csv,text/plain" hidden>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="data-table" id="targetsTable">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th title="Right ascension, degrees (0&ndash;360)">RA</th>
+              <th title="Declination, degrees (&minus;90 to 90)">Dec</th>
+              <th title="Integer &ge; 1">Priority</th>
+              <th title="Exposure time in seconds (&le; 3600)">Exp time</th>
+              <th title="1, 3, 9 or 27">N dither</th>
+              <th title="Integer &ge; 1">N set</th>
+              <th title="Optional">Group</th>
+              <th class="col-action"></th>
+            </tr>
+          </thead>
+          <tbody id="targetsBody"></tbody>
+        </table>
+      </div>
+      <div class="card-foot">
+        <span id="targetsStatus" class="foot-status"></span>
+        <button class="btn btn-ghost" id="addRowBtn" type="button">+ Add row</button>
+      </div>
+    </div>
+
+    <!-- Dates + Parameters -->
+    <div class="side-stack">
+      <div class="card">
+        <div class="card-head"><h2>Dates</h2></div>
+        <div class="card-body">
+          <label class="radio-row">
+            <input type="radio" name="dateMode" value="single" checked>
+            <span>Single night</span>
+          </label>
+          <div class="date-row" id="singleDateRow">
+            <label class="field"><span class="field-label">Date</span>
+              <input type="date" id="singleDate">
+            </label>
+          </div>
+
+          <label class="radio-row">
+            <input type="radio" name="dateMode" value="range">
+            <span>Date range <em>(&le; 31 nights)</em></span>
+          </label>
+          <div class="date-row two" id="rangeDateRow" hidden>
+            <label class="field"><span class="field-label">Start</span><input type="date" id="rangeStart"></label>
+            <span class="date-sep">&ndash;</span>
+            <label class="field"><span class="field-label">End</span><input type="date" id="rangeEnd"></label>
+          </div>
+          <div class="inline-msg" id="dateMsg"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head"><h2>Parameters</h2></div>
+        <div class="card-body">
+          <div class="param-grid">
+            <label class="field"><span class="field-label">Clear prob</span>
+              <input type="text" id="clearProb" inputmode="decimal" value="1.0" autocomplete="off" spellcheck="false"></label>
+            <label class="field"><span class="field-label">Seed</span>
+              <input type="text" id="seed" inputmode="numeric" value="2027" autocomplete="off" spellcheck="false"></label>
+          </div>
+
+          <details class="advanced" id="advanced">
+            <summary>Advanced options</summary>
+            <div class="param-grid">
+              <label class="field"><span class="field-label">Time limit (s)</span>
+                <input type="text" id="timeLimit" inputmode="decimal" value="60" autocomplete="off" spellcheck="false"></label>
+              <label class="field"><span class="field-label">Eps</span>
+                <input type="text" id="eps" inputmode="decimal" value="1e-3" autocomplete="off" spellcheck="false"></label>
+              <label class="field"><span class="field-label">Gamma</span>
+                <input type="text" id="gamma" inputmode="decimal" value="0.01" autocomplete="off" spellcheck="false"></label>
+              <label class="field"><span class="field-label">Alpha</span>
+                <input type="text" id="alpha" inputmode="decimal" value="0.5" autocomplete="off" spellcheck="false"></label>
+            </div>
+          </details>
+
+          <button class="btn btn-primary btn-run" id="runBtn" type="button">Start Scheduling</button>
+          <div class="inline-msg" id="runMsg"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== Run progress ===================== -->
+  <section class="card run-panel" id="runPanel" hidden>
+    <div class="run-head">
+      <div class="run-title">
+        <span class="run-dot" aria-hidden="true"></span>
+        <span id="runStatus">Starting scheduling&hellip;</span>
+      </div>
+      <button class="btn btn-danger" id="cancelBtn" type="button">Cancel</button>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">Night 0/0</div>
+  </section>
+
+  <!-- ===================== Error banner ===================== -->
+  <div class="banner banner-error" id="errorBanner" hidden></div>
+
+  <!-- ===================== Results ===================== -->
+  <section id="results" aria-label="Schedule results" hidden>
+    <div class="card results-card">
+      <div class="results-head">
+        <h2>Schedule Results</h2>
+        <div class="results-meta" id="resultsMeta"></div>
+      </div>
+
+      <div id="capacityWarning" class="banner banner-warn" hidden></div>
+
+      <div class="tabs" role="tablist" aria-label="Result views">
+        <button class="tab-btn active" data-tab="overview" role="tab" type="button">Overview</button>
+        <button class="tab-btn" data-tab="pernight" role="tab" type="button">Per-night</button>
+        <button class="tab-btn" data-tab="download" role="tab" type="button">Download</button>
+      </div>
+
+      <!-- Overview -->
+      <div class="tab-panel" id="panel-overview" role="tabpanel">
+        <div class="summary-strip" id="summaryStrip"></div>
+        <div class="overview-grid">
+          <div class="table-box">
+            <h3>Target completion</h3>
+            <div class="table-wrap table-wrap-scroll">
+              <table class="data-table" id="overviewCompletionTable">
+                <thead>
+                  <tr>
+                    <th>Target</th><th>Required</th><th>Done</th><th>Fraction</th>
+                    <th>Nights observed</th><th>Obs time (h)</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewCompletionBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="table-box">
+            <h3>Observed hours per night</h3>
+            <div class="table-wrap table-wrap-scroll">
+              <table class="data-table" id="overviewHoursTable">
+                <thead>
+                  <tr>
+                    <th>Date</th><th>Clear/Cloudy</th><th>Available (h)</th><th>Observed (h)</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewHoursBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="chart-box map-box">
+          <div class="chart chart-map" id="chartSkyMap"></div>
+          <div class="empty" id="skyMapEmpty" hidden>No targets to map.</div>
+        </div>
+        <div class="empty" id="noClearNote" hidden>No clear nights in the selected range &mdash; no observations were scheduled.</div>
+      </div>
+
+      <!-- Per-night -->
+      <div class="tab-panel" id="panel-pernight" role="tabpanel" hidden>
+        <div class="pernight-bar">
+          <label class="field night-select"><span class="field-label">Night</span>
+            <select id="nightSelect"></select>
+          </label>
+          <span class="loading-note" id="tracksLoading" hidden>Loading night tracks…</span>
+        </div>
+        <div class="chart-box gantt-box">
+          <div class="chart chart-tracks" id="chartTracks"></div>
+          <div class="chart chart-blocks" id="chartBlocks"></div>
+          <div class="empty" id="ganttEmpty" hidden></div>
+        </div>
+        <div class="table-box">
+          <h3>Blocks</h3>
+          <div class="table-wrap table-wrap-scroll">
+            <table class="data-table" id="blocksTable">
+              <thead>
+                <tr>
+                  <th>Target</th><th>Exp #</th><th>Start (UTC+8)</th><th>End (UTC+8)</th>
+                  <th>Alt (&deg;)</th><th>Az (&deg;)</th><th>Moon sep (&deg;)</th><th>Duration (min)</th>
+                </tr>
+              </thead>
+              <tbody id="blocksBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Download -->
+      <div class="tab-panel" id="panel-download" role="tabpanel" hidden>
+        <div class="download-grid">
+          <div class="dl-card">
+            <h4>Blocks</h4>
+            <p>One row per observation block: times, duration, altitude / azimuth / moon separation.</p>
+            <a class="btn btn-primary" id="dlBlocks" download="blocks.csv" href="#">blocks.csv</a>
+          </div>
+          <div class="dl-card">
+            <h4>Targets</h4>
+            <p>Per-target progress summary: required / done exposures, fraction, nights observed, hours.</p>
+            <a class="btn btn-primary" id="dlTargets" download="targets.csv" href="#">targets.csv</a>
+          </div>
+          <div class="dl-card">
+            <h4>Nights</h4>
+            <p>Per-night summary: clear/cloudy, night window, blocks, targets, observing hours.</p>
+            <a class="btn btn-primary" id="dlNights" download="nights.csv" href="#">nights.csv</a>
+          </div>
+        </div>
+        <div class="dl-note" id="downloadNote"></div>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== Server stopped state ===================== -->
+<div class="stopped-overlay" id="stoppedOverlay" hidden>
+  <div class="stopped-card">
+    <div class="stopped-title">Server stopped</div>
+    <p class="stopped-note">You can close this tab.</p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
