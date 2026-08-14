@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import matplotlib
 
@@ -39,6 +39,7 @@ MAX_CAMPAIGN_TARGETS = 100
 GROUP_PANEL_THRESHOLD = 50
 GROUP_COLORS = [c for i, c in enumerate(TARGET_COLORS) if i not in (0, 1, 14, 15)]
 LOCAL_OFFSET = timedelta(hours=8)
+LOCAL_TZ = timezone(LOCAL_OFFSET)
 UTIL_Y0, UTIL_Y1 = 3.0, 22.0
 
 
@@ -64,8 +65,10 @@ def _shade_twilight(ax, grid: Time, sun_alt: np.ndarray) -> None:
 
 
 def _format_time_axis(ax, night: NightPlan) -> None:
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M"))
-    ax.set_xlabel("UTC (HH:MM)")
+    # Underlying data stays in UTC; only the displayed labels are shifted to
+    # Nanshan local time (UTC+8, fixed offset, no DST).
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=LOCAL_TZ))
+    ax.set_xlabel("Local time (UTC+8)")
     if night.night_start is not None and night.night_end is not None:
         ax.set_xlim(night.night_start.to_datetime(), night.night_end.to_datetime())
 
@@ -184,7 +187,7 @@ def plot_night_figure(
         handles=handles, fontsize=7, loc="upper right",
         ncol=max(1, len(handles) // 8 + 1), framealpha=0.9,
     )
-    ax_alt.set_title(f"AMASE-P schedule — {night.date} (UTC)")
+    ax_alt.set_title(f"AMASE-P schedule — {night.date} (local time)")
 
     ordered = sorted(night.blocks, key=lambda b: (b.start_time, b.target_name))
     rows: dict[str, int] = {}
@@ -331,9 +334,12 @@ def plot_campaign_figure(
     ax1.set_ylabel("local time (UTC+8)")
     ax1.grid(axis="y", ls=":", lw=0.5, alpha=0.6, zorder=0)
     ax1.set_xlim(x[0] - 1, x[-1] + 1)
-    locator = mdates.AutoDateLocator(minticks=4, maxticks=14)
+    locator = mdates.AutoDateLocator(minticks=3, maxticks=8)
     ax1.xaxis.set_major_locator(locator)
     ax1.xaxis.set_major_formatter(mdates.AutoDateFormatter(locator))
+    # Rotated, right-aligned date labels keep ranges from ~2 weeks to
+    # ~2 years free of overlaps; tight_layout below reserves room for them.
+    plt.setp(ax1.get_xticklabels(), rotation=30, ha="right", va="top")
     n_obs = sum(1 for n in nights if n.blocks)
     ax1.set_title(
         f"AMASE-P campaign {schedule.start_date} .. {schedule.end_date} "
