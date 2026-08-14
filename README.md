@@ -20,17 +20,22 @@ pip install -e .
 # with the test suite:
 pip install -e ".[dev]"
 pytest
+
+# with the web UI:
+pip install -e ".[web]"
 ```
 
-This installs three commands:
+This installs four commands:
 
 | Command | Purpose |
 |---------|---------|
 | `amase-schedule` | Observation scheduling (single night / multi-night campaign), writes CSVs |
 | `amase-precompute` | Parallel visibility precomputation; writes a cache file reusable by `amase-schedule` |
 | `amase-plot` | Renders figures from the CSV products of `amase-schedule` (plotting fully decoupled from scheduling) |
+| `amase-web` | Local web UI: upload a target list, schedule with live progress, download results (needs `.[web]`) |
 
-Dependencies: Python ≥ 3.10, astropy, astroplan, numpy, pulp (CBC), matplotlib.
+Dependencies: Python ≥ 3.10, astropy, astroplan, numpy, pulp[cbc] (CBC),
+matplotlib. The web UI additionally needs fastapi + uvicorn.
 
 ---
 
@@ -57,10 +62,13 @@ AMASE_scheduling/
 │       ├── plotting.py           # night / campaign / track figures
 │       ├── cli.py                # amase-schedule
 │       ├── cli_precompute.py     # amase-precompute
-│       └── cli_plot.py           # amase-plot
-├── tests/                        # pytest smoke tests (loader / scheduler / CSV round-trip)
+│       ├── cli_plot.py           # amase-plot
+│       └── web/                  # amase-web: FastAPI backend + static frontend
+├── tests/                        # pytest smoke tests (loader / scheduler / CSV round-trip / web API)
 └── example/
     ├── targets.csv               # example 42-target list (grouped)
+    ├── vis_cache.npz             # shipped visibility cache: 2027-04-01 .. 2029-04-01 for targets.csv
+    ├── flowchart.png             # pipeline overview figure (shown above)
     ├── demo.py                   # end-to-end API walkthrough (script)
     ├── demo.ipynb                # the same walkthrough as a Jupyter notebook
     └── outputs/                  # created by the demos at runtime
@@ -78,9 +86,10 @@ amase-schedule example/targets.csv 2027-04-01
 amase-schedule example/targets.csv 2027-04-01 -o plan.csv
 amase-plot night plan.csv --date 2027-04-01 --targets example/targets.csv -o night.png
 
-# ③ Half-month campaign (50% clear-night weather model + report + figure)
+# ③ Half-month campaign (50% clear-night weather model + report + figure),
+#    reusing the shipped visibility cache (covers 2027-04-01 .. 2029-04-01)
 amase-schedule example/targets.csv --start 2027-04-01 --end 2027-04-15 \
-    --clear-prob 0.5 --seed 42 -o campaign.csv
+    --clear-prob 0.5 --seed 42 --cache example/vis_cache.npz -o campaign.csv
 amase-plot campaign campaign.csv --targets example/targets.csv -o campaign.png
 ```
 
@@ -207,7 +216,8 @@ amase-plot track --name NGC4258 --targets targets.csv --date 2028-02-09 -o track
 
 **Figure content**:
 - **Night figure**: top = altitude tracks (scheduled blocks bolded,
-  30° limit line, twilight shading); bottom = Gantt timeline.
+  30° limit line, twilight shading); bottom = Gantt timeline. The time
+  axis is Nanshan local time (UTC+8), with LST on the secondary axis.
 - **Campaign figure**: top = night-window utilization (x = date, y =
   local time UTC+8; gray band = sunset→sunrise, dashed = −12°
   dark-window bounds, blocks colored by group, cloudy nights left
@@ -228,6 +238,12 @@ Visibility calculation (ephemerides, altitudes, the Moon) is the only
 expensive step of the pipeline. For long date ranges, precompute it in
 parallel once and reuse the cache across any number of scheduling runs
 with different seeds or tuning parameters.
+
+**The repo ships `example/vis_cache.npz`**: 732 nights
+(2027-04-01 .. 2029-04-01) for `example/targets.csv`. Any schedule fully
+inside that range can use it directly with `--cache example/vis_cache.npz`
+— no precompute needed. You only need this section when you change the
+target list or schedule outside the covered range.
 
 ```bash
 amase-precompute targets.csv --start 2027-04-01 --end 2027-04-15 \
@@ -254,7 +270,32 @@ fresh precompute.
 
 ---
 
-## 8. Recipes
+## 8. `amase-web` reference
+
+A local web UI (FastAPI + static frontend) wrapping the same scheduling
+engine — install with `pip install -e ".[web]"`, then:
+
+```bash
+amase-web                      # serves http://127.0.0.1:8765 and opens your browser
+amase-web --port 9000 --no-browser
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--host` | 127.0.0.1 | Bind address |
+| `--port` | 8765 | Port |
+| `--no-browser` | off | Do not open the browser automatically |
+
+In the page: upload a target CSV (validated with the same rules as the
+CLI, errors point at the offending row/field), pick a single night or a
+date range plus weather/seed/tuning parameters, and start the job — a
+live progress bar shows night-by-night advancement. When finished,
+download the CSV trio and view the per-night altitude/Gantt figures in
+the browser. The Exit button in the page shuts the server down.
+
+---
+
+## 9. Recipes
 
 ```bash
 # 1. On duty tonight — quick plan + figure
@@ -293,7 +334,7 @@ amase-plot nights apr.csv --targets example/targets.csv -o duty_roster/
 
 ---
 
-## 9. Tuning the three bonus weights
+## 10. Tuning the three bonus weights
 
 | Symptom | Adjustment |
 |---------|-----------|
@@ -308,7 +349,7 @@ three parameters only fine-tune near-ties.
 
 ---
 
-## 10. FAQ
+## 11. FAQ
 
 **Q: Why was my target never scheduled all night?**
 A: Check which list it appears on in the report: *unschedulable*

@@ -2,7 +2,8 @@
 
 Workflow demonstrated:
   1. load target list
-  2. precompute visibility cache in parallel (once)
+  2. load the shipped visibility cache (2027-04-01 .. 2029-04-01;
+     builds a fresh one if the file is missing)
   3. single-night schedule (reuses the cache)
   4. multi-night campaign 2027-04-01 .. 2027-04-15 (reuses the same cache)
   5. observing log (text + CSV) and all figures
@@ -25,9 +26,11 @@ from amase_scheduling import (
     save_schedule_csv,
     save_targets_csv,
 )
+from amase_scheduling._warnings import suppress_future_date_warnings
 
 REPO = Path(__file__).resolve().parent.parent
 TARGETS = REPO / "example" / "targets.csv"
+SHIPPED_CACHE = REPO / "example" / "vis_cache.npz"
 OUTDIR = REPO / "example" / "outputs"
 
 START, END = "2027-04-01", "2027-04-15"
@@ -37,14 +40,22 @@ WORKERS = 8
 
 
 def main():
+    suppress_future_date_warnings()
     OUTDIR.mkdir(parents=True, exist_ok=True)
     targets = load_targets(str(TARGETS))
     print(f"Loaded {len(targets)} targets from {TARGETS.name}")
 
-    print(f"\n[1/4] Precomputing visibility {START} .. {END} ({WORKERS} workers) ...")
-    cache = VisibilityCache.build(targets, START, END, n_workers=WORKERS)
-    cache.save(str(OUTDIR / "vis_cache.npz"))
-    print(f"      cached {len(cache)} nights -> {OUTDIR / 'vis_cache.npz'}")
+    print("\n[1/4] Loading visibility cache ...")
+    if SHIPPED_CACHE.exists():
+        cache = VisibilityCache.load(str(SHIPPED_CACHE))
+        print(f"      {len(cache)} nights "
+              f"({min(cache.nights)} .. {max(cache.nights)}) <- {SHIPPED_CACHE}")
+    else:
+        print(f"      {SHIPPED_CACHE} not found, building {START} .. {END} "
+              f"({WORKERS} workers) ...")
+        cache = VisibilityCache.build(targets, START, END, n_workers=WORKERS)
+        cache.save(str(OUTDIR / "vis_cache.npz"))
+        print(f"      cached {len(cache)} nights -> {OUTDIR / 'vis_cache.npz'}")
 
     scheduler = Scheduler()
 
@@ -83,7 +94,6 @@ def main():
     print(f"\nDone. Results in {OUTDIR}:")
     print(f"  observing_log.txt / observing_log.csv / observing_log_targets.csv / observing_log_nights.csv")
     print(f"  campaign.png, night_{START}.png, nights/ ({len(night_paths)} figures)")
-    print(f"  vis_cache.npz")
 
 
 if __name__ == "__main__":
