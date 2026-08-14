@@ -14,7 +14,7 @@ def build_milp(
     time_limit: int = 60,
     quality: np.ndarray | None = None,
     alpha: float = 0.0,
-) -> tuple[pulp.LpProblem, dict[tuple[int, int], pulp.LpVariable], pulp.PULP_CBC_CMD]:
+) -> tuple[pulp.LpProblem, dict[tuple[int, int], pulp.LpVariable], pulp.COIN_CMD]:
     """Build the scheduling MILP.
 
     Variables are merged over the exposure index j: x[i,k]=1 means one block
@@ -48,12 +48,12 @@ def build_milp(
         w = float(weights[i])
         valid_k = np.where(valid_start[i])[0]
 
-        y_i = pulp.LpVariable(f"y_{i}", cat=pulp.LpBinary)
+        y_i = prob.add_variable(f"y_{i}", cat=pulp.LpBinary)
         y_vars.append(y_i)
 
         x_list = []
         for k in valid_k:
-            var = pulp.LpVariable(f"x_{i}_{k}", cat=pulp.LpBinary)
+            var = prob.add_variable(f"x_{i}_{k}", cat=pulp.LpBinary)
             var_map[(i, k)] = var
             x_list.append(var)
             if quality is not None and alpha > 0:
@@ -69,7 +69,7 @@ def build_milp(
             prob += y_i == 0, f"nosched_{i}"
 
         if gamma > 0 and K > 0 and x_list:
-            c_i = pulp.LpVariable(f"c_{i}", cat=pulp.LpBinary)
+            c_i = prob.add_variable(f"c_{i}", cat=pulp.LpBinary)
             c_vars.append(c_i)
             prob += pulp.lpSum(x_list) >= K * c_i, f"complete_{i}"
 
@@ -87,7 +87,7 @@ def build_milp(
         valid_set = set(np.where(valid_start[i])[0].tolist())
         for k in valid_set:
             if (k + B) in valid_set:
-                ch = pulp.LpVariable(f"chain_{i}_{k}", cat=pulp.LpBinary)
+                ch = prob.add_variable(f"chain_{i}_{k}", cat=pulp.LpBinary)
                 chain_map[(i, k)] = ch
                 prob += ch <= var_map[(i, k)], f"chain_a_{i}_{k}"
                 prob += ch <= var_map[(i, k + B)], f"chain_b_{i}_{k}"
@@ -107,14 +107,14 @@ def build_milp(
         if slot_terms[t]:
             prob += pulp.lpSum(slot_terms[t]) <= 1, f"slot_{t}"
 
-    solver = pulp.PULP_CBC_CMD(msg=False, timeLimit=time_limit)
+    solver = pulp.COIN_CMD(msg=False, timeLimit=time_limit)
     return prob, var_map, solver
 
 
 def solve_milp(
     prob: pulp.LpProblem,
     var_map: dict[tuple[int, int], pulp.LpVariable],
-    solver: pulp.PULP_CBC_CMD,
+    solver: pulp.COIN_CMD,
 ) -> list[tuple[int, int]]:
     prob.solve(solver)
     status = pulp.LpStatus[prob.status]
