@@ -79,6 +79,9 @@ def _load_common(args):
 
 
 def main():
+    from amase_scheduling._warnings import suppress_future_date_warnings
+    suppress_future_date_warnings()
+
     parser = argparse.ArgumentParser(
         prog="amase-plot",
         description="AMASE-P plotting tool: render figures from amase-schedule CSV outputs",

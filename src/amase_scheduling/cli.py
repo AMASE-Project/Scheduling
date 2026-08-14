@@ -13,6 +13,9 @@ from amase_scheduling.output import (
 
 
 def main():
+    from amase_scheduling._warnings import suppress_future_date_warnings
+    suppress_future_date_warnings()
+
     parser = argparse.ArgumentParser(
         description="AMASE-P Telescope Observation Scheduler",
     )

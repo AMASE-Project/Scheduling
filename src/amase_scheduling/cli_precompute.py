@@ -7,6 +7,9 @@ from amase_scheduling.target import load_targets
 
 
 def main():
+    from amase_scheduling._warnings import suppress_future_date_warnings
+    suppress_future_date_warnings()
+
     parser = argparse.ArgumentParser(
         description="AMASE-P visibility precomputer: compute per-night "
         "visibility in parallel and save to disk for reuse by amase-schedule.",
