@@ -1,4 +1,6 @@
+import io
 import multiprocessing as mp
+import warnings
 
 import numpy as np
 import astropy.units as u
@@ -52,8 +54,13 @@ class VisibilityCache:
     of nights. Can be shared across multiple schedule() runs (e.g. Monte
     Carlo weather realizations)."""
 
-    def __init__(self, target_names: list[str]):
+    def __init__(
+        self,
+        target_names: list[str],
+        block_slots: np.ndarray | None = None,
+    ):
         self.target_names = list(target_names)
+        self.block_slots = block_slots
         self.nights: dict[str, NightVisibility] = {}
 
     @classmethod
@@ -74,8 +81,8 @@ class VisibilityCache:
             for i in range(n_nights)
         ]
 
-        cache = cls([t.name for t in targets])
         block_slots = block_slots_of(targets)
+        cache = cls([t.name for t in targets], block_slots)
 
         if n_workers > 1 and n_nights > 1:
             args = [(d, targets, block_slots) for d in dates]
@@ -99,6 +106,29 @@ class VisibilityCache:
                 f"{self.target_names[:3]}) — rebuild the cache."
             )
 
+        if self.block_slots is None:
+            warnings.warn(
+                "VisibilityCache has no exposure-time fingerprint (built by an "
+                "older version); only target names were checked.",
+                stacklevel=2,
+            )
+            return
+
+        current = block_slots_of(targets)
+        if not np.array_equal(self.block_slots, current):
+            n = min(len(self.block_slots), len(current))
+            offending = [
+                f"{names[i]} ({self.block_slots[i]} -> {current[i]} slots)"
+                for i in range(n)
+                if self.block_slots[i] != current[i]
+            ]
+            raise ValueError(
+                "VisibilityCache block-slot fingerprint differs for "
+                f"{len(offending)} target(s): {', '.join(offending)}. "
+                "Exposure times likely changed since the cache was built — "
+                "rebuild the cache."
+            )
+
     def get(self, date_str: str) -> NightVisibility:
         try:
             return self.nights[date_str]
@@ -117,6 +147,8 @@ class VisibilityCache:
             "target_names": np.array(self.target_names),
             "dates": np.array(dates),
         }
+        if self.block_slots is not None:
+            arrays["block_slots"] = np.asarray(self.block_slots)
         for d in dates:
             nv = self.nights[d]
             arrays[f"vs::{d}"] = nv.valid_start
@@ -128,9 +160,21 @@ class VisibilityCache:
 
     @classmethod
     def load(cls, path: str) -> "VisibilityCache":
-        data = np.load(path, allow_pickle=False)
+        return cls._from_npz(np.load(path, allow_pickle=False))
+
+    @classmethod
+    def load_bytes(cls, data: bytes) -> "VisibilityCache":
+        """Load a cache from raw ``.npz`` bytes (e.g. a browser file upload)."""
+        return cls._from_npz(np.load(io.BytesIO(data), allow_pickle=False))
+
+    @classmethod
+    def _from_npz(cls, data) -> "VisibilityCache":
+        """Build a VisibilityCache from an opened ``np.load`` result (an
+        ``NpzFile``), shared by ``load`` (file path) and ``load_bytes``
+        (in-memory bytes)."""
         target_names = [str(n) for n in data["target_names"]]
-        cache = cls(target_names)
+        block_slots = data["block_slots"] if "block_slots" in data else None
+        cache = cls(target_names, block_slots)
         for d in data["dates"]:
             date_str = str(d)
             win = data[f"win::{date_str}"]
