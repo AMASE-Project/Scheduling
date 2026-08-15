@@ -20,9 +20,6 @@ pip install -e .
 # with the test suite:
 pip install -e ".[dev]"
 pytest
-
-# with the web UI:
-pip install -e ".[web]"
 ```
 
 This installs four commands:
@@ -32,10 +29,10 @@ This installs four commands:
 | `amase-schedule` | Observation scheduling (single night / multi-night campaign), writes CSVs |
 | `amase-precompute` | Parallel visibility precomputation; writes a cache file reusable by `amase-schedule` |
 | `amase-plot` | Renders figures from the CSV products of `amase-schedule` (plotting fully decoupled from scheduling) |
-| `amase-web` | Local web UI: upload a target list, schedule with live progress, download results (needs `.[web]`) |
+| `amase-web` | Local web UI: upload a target list, schedule with live progress, download results |
 
 Dependencies: Python ≥ 3.10, astropy, astroplan, numpy, pulp[cbc] (CBC),
-matplotlib. The web UI additionally needs fastapi + uvicorn.
+matplotlib, fastapi + uvicorn (web UI).
 
 ---
 
@@ -273,7 +270,7 @@ fresh precompute.
 ## 8. `amase-web` reference
 
 A local web UI (FastAPI + static frontend) wrapping the same scheduling
-engine — install with `pip install -e ".[web]"`, then:
+engine:
 
 ```bash
 amase-web                      # serves http://127.0.0.1:8765 and opens your browser

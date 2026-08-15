@@ -20,7 +20,7 @@ def main() -> None:
         help="Do not open the browser automatically.",
     )
     args = parser.parse_args()
-    import uvicorn  # lazy: importing amase_scheduling must never require fastapi/uvicorn
+    import uvicorn  # lazy: keeps CLI startup fast
 
     url = f"http://{args.host}:{args.port}"
     if not args.no_browser:
