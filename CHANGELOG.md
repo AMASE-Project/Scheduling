@@ -5,6 +5,46 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`amase-web`** — local web UI (FastAPI backend + static frontend):
+  submit campaigns from the browser, watch live progress, browse night
+  figures, and stop the server from the page. Runs at
+  http://127.0.0.1:8765 by default (`--host` / `--port` / `--no-browser`).
+  Scheduler gains a `progress_callback` hook (c5dec92).
+- Shipped **`example/vis_cache.npz`**: 2-year visibility cache
+  (2027-04-01 .. 2029-04-01) for the 42-target example, so demos and the
+  web UI schedule instantly without precompute (d39797a).
+- Pipeline overview figure embedded in the README (080568a).
+- FAQ entry: far-southern targets are schedulable at exposure
+  granularity (1347f88).
+
+### Changed
+
+- **Migrated to the PuLP 4.0 API**: `pulp.COIN_CMD` solver and
+  `prob.add_variable(...)`; dependency floor raised to `pulp[cbc]>=3.1`
+  (d354f76).
+- **Web dependencies are now mandatory** (`fastapi`, `uvicorn[standard]`
+  in core dependencies); the `.[web]` extra is removed (00e4e8e).
+- Night figures show **Nanshan local time (UTC+8)** on the primary
+  axis ("Local time (UTC+8)"); the LST secondary axis is unchanged
+  (90278a3).
+- CLI entry points suppress benign far-future date warnings (astropy
+  polar-motion and ERFA "dubious year"); library use is unaffected
+  (d461d6c).
+- `example/demo.py` loads the shipped cache (with build fallback);
+  `demo.ipynb` updated to v0.2.0 terminology and executed clean
+  (d39797a).
+
+### Fixed
+
+- Campaign figure date labels no longer overlap (AutoDateLocator with
+  30° rotation) (90278a3).
+- `demo.ipynb` used the stale attribute `t.n_exposure`; now
+  `t.n_exposures` (d39797a).
+
 ## [0.2.0] - 2026-08-11
 
 ### Changed
