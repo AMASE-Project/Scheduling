@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 
 from amase_scheduling import Scheduler
+from amase_scheduling.cache import VisibilityCache
 
 from . import jobs
 from .serialize import schedule_to_json
@@ -31,6 +32,7 @@ def run_schedule_job(
     gamma: float,
     alpha: float,
     time_limit: int,
+    visibility_cache: VisibilityCache | None = None,
 ) -> None:
     def progress_callback(night_idx: int, n_nights: int, date_str: str) -> None:
         if jobs.is_cancelled(job):
@@ -51,6 +53,7 @@ def run_schedule_job(
             alpha=alpha,
             time_limit=time_limit,
             progress_callback=progress_callback,
+            visibility_cache=visibility_cache,
         )
     except CancelledError:
         jobs.set_cancelled(job)
@@ -72,13 +75,17 @@ def start_job(
     gamma: float,
     alpha: float,
     time_limit: int,
+    visibility_cache: VisibilityCache | None = None,
 ) -> jobs.Job:
     """Create a job and launch the scheduler in a background thread."""
     job = jobs.create_job()
     job.targets = targets  # retain for the per-night altitude-tracks endpoint
     thread = threading.Thread(
         target=run_schedule_job,
-        args=(job, targets, start, end, clear_prob, seed, eps, gamma, alpha, time_limit),
+        args=(
+            job, targets, start, end, clear_prob, seed, eps, gamma, alpha,
+            time_limit, visibility_cache,
+        ),
         daemon=True,
     )
     job.thread = thread

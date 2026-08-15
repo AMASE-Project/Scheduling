@@ -290,6 +290,15 @@ live progress bar shows night-by-night advancement. When finished,
 download the CSV trio and view the per-night altitude/Gantt figures in
 the browser. The Exit button in the page shuts the server down.
 
+To skip the on-the-fly visibility computation, load a precomputed
+`.npz` cache (from `amase-precompute`, e.g. the shipped
+`example/vis_cache.npz`) in the *Visibility cache* card: choose or
+drag-and-drop the file (uploaded to the in-memory server), or enter a
+server-side path and click Load. The UI shows the cache coverage,
+limits the date pickers to it, and warns when the cache's target list
+(names and exposure times) does not match the current targets.
+Uploaded caches live in server memory — re-upload after a restart.
+
 ---
 
 ## 9. Recipes

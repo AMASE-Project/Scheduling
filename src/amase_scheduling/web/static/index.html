@@ -98,6 +98,24 @@
         </div>
       </div>
 
+      <div class="card cache-card" id="cacheCard">
+        <div class="card-head"><h2>Visibility cache (optional)</h2></div>
+        <div class="card-body">
+          <div class="cache-row">
+            <label class="field"><span class="field-label">Cache path (.npz)</span>
+              <input type="text" id="cachePath" placeholder="example/vis_cache.npz" autocomplete="off" spellcheck="false"></label>
+            <button class="btn" id="cacheLoadBtn" type="button">Load</button>
+            <button class="btn" id="cacheUploadBtn" type="button">Choose .npz file…</button>
+            <input type="file" id="cacheFile" accept=".npz" hidden>
+          </div>
+          <div class="cache-status-row">
+            <span class="cache-status" id="cacheStatus"></span>
+            <button class="btn btn-ghost cache-clear" id="cacheClearBtn" type="button" hidden>Clear</button>
+          </div>
+          <div class="cache-warn" id="cacheWarn" hidden></div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-head"><h2>Parameters</h2></div>
         <div class="card-body">

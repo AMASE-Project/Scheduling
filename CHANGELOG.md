@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`amase-web` can load a precomputed visibility cache**: pick or
+  drag-and-drop a `.npz` file in the browser (`POST /api/cache/upload`,
+  kept in memory under a `cache_id`), or enter a server-side path
+  (`POST /api/cache/load`); `POST /api/schedule` accepts either
+  `cache_id` or `cache_path`. The date range is validated against the
+  cache coverage up front (400 with a clear message instead of a
+  mid-run failure). The frontend *Visibility cache* card shows load
+  status, warns on target-list mismatch, and limits the date pickers
+  to the cache coverage. `VisibilityCache.load_bytes()` supports the
+  upload path.
+- **`VisibilityCache` exposure-time fingerprint**: caches now store the
+  per-target block-slot counts and `validate()` compares them, so
+  editing `exp_time` after building a cache is rejected instead of
+  silently using stale visibility. Old-format caches without the
+  fingerprint still work but emit a `UserWarning` (names-only check).
+  The shipped `example/vis_cache.npz` was regenerated with the
+  fingerprint.
+- Tests: `tests/test_cache.py` (fingerprint save/load/validate,
+  old-format warning) and `tests/test_web_cache.py` (load endpoint,
+  coverage and mismatch rejection).
 - **`amase-web`** — local web UI (FastAPI backend + static frontend):
   submit campaigns from the browser, watch live progress, browse night
   figures, and stop the server from the page. Runs at
@@ -23,6 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- New core dependency `python-multipart` (required by the cache upload
+  endpoint).
 - **Migrated to the PuLP 4.0 API**: `pulp.COIN_CMD` solver and
   `prob.add_variable(...)`; dependency floor raised to `pulp[cbc]>=3.1`
   (d354f76).

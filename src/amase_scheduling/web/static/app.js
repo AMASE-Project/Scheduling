@@ -124,6 +124,7 @@ const state = {
   nightIdx: 0,
   tracksCache: {},        // night index -> /night/{i}/tracks response
   shuttingDown: false,    // exit confirmed: stop polling, suppress error surfacing
+  cache: null,            // active visibility cache: { source: 'path'|'upload', path?, cache_id?, filename?, n_nights, start, end, n_targets, target_names }
 };
 
 /* ---------------- API helpers (all fetches live here) ---------------- */
@@ -177,6 +178,12 @@ async function apiGetTracks(jobId, nightIdx) {
   return request('/api/schedule/' + encodeURIComponent(jobId) + '/night/' + nightIdx + '/tracks');
 }
 async function apiShutdown() { return postJSON('/api/shutdown', {}); }
+async function apiLoadCache(path) { return postJSON('/api/cache/load', { path: path }); }
+async function apiUploadCache(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  return request('/api/cache/upload', { method: 'POST', body: fd });
+}
 async function apiCancelJob(id) {
   return request('/api/schedule/' + encodeURIComponent(id) + '/cancel', { method: 'POST' });
 }
@@ -364,6 +371,7 @@ function renderTargetsTable() {
   state.rows.forEach((_, i) => refreshRowFeedback(i));
   updateTargetsStatus();
   updateRunState();
+  updateCacheTargetCheck();
 }
 
 function updateTargetsStatus() {
@@ -497,6 +505,154 @@ function updateRunState() {
 }
 
 /* ============================================================
+   Visibility cache
+   ============================================================ */
+
+function currentTargetNames() {
+  return state.rows.map((r) => String(r.name || '').trim());
+}
+
+/* Order-sensitive comparison of the loaded cache's target list against the
+   current table rows. */
+function cacheTargetsMatch() {
+  if (!state.cache) return true;
+  const cacheNames = state.cache.target_names || [];
+  const cur = currentTargetNames();
+  if (cacheNames.length !== cur.length) return false;
+  for (let i = 0; i < cacheNames.length; i++) {
+    if (cacheNames[i] !== cur[i]) return false;
+  }
+  return true;
+}
+
+function applyCacheDateLimits() {
+  const c = state.cache;
+  ['singleDate', 'rangeStart', 'rangeEnd'].forEach((id) => {
+    const el = $('#' + id);
+    if (c && c.start && c.end) {
+      el.min = c.start;
+      el.max = c.end;
+    } else {
+      el.removeAttribute('min');
+      el.removeAttribute('max');
+    }
+  });
+}
+
+function setCacheStatus(text, kind) {
+  const el = $('#cacheStatus');
+  el.textContent = text;
+  el.className = 'cache-status' + (kind ? ' ' + kind : '');
+}
+
+function renderCacheStatus() {
+  $('#cacheClearBtn').hidden = !state.cache;
+  const warn = $('#cacheWarn');
+  if (state.cache) {
+    const c = state.cache;
+    const n = c.n_nights != null ? c.n_nights : 0;
+    const t = c.n_targets != null ? c.n_targets : 0;
+    const name = c.source === 'upload' ? (c.filename || '') + ' — ' : '';
+    setCacheStatus('✓ ' + name + n + ' night' + (n === 1 ? '' : 's') +
+      ' (' + c.start + ' .. ' + c.end + '), ' + t + ' target' + (t === 1 ? '' : 's'), 'ok');
+    if (cacheTargetsMatch()) {
+      warn.hidden = true;
+    } else {
+      warn.textContent = 'Cache target list does not match the current targets (order-sensitive) — scheduling will be rejected.';
+      warn.hidden = false;
+    }
+  } else {
+    setCacheStatus('Optional: precomputed visibility cache for faster scheduling.', '');
+    warn.hidden = true;
+  }
+}
+
+/* Re-run the cache/target comparison only when a cache is already loaded. */
+function updateCacheTargetCheck() {
+  if (state.cache) renderCacheStatus();
+}
+
+/* Shared failure path: drop any active cache and surface the message in the
+   error style (matches failed path-loads — no stale cache while an error shows). */
+function clearCacheOnError(msg) {
+  state.cache = null;
+  applyCacheDateLimits();
+  $('#cacheClearBtn').hidden = true;
+  $('#cacheWarn').hidden = true;
+  setCacheStatus(msg, 'error');
+}
+
+/* Disable the Load / Choose buttons while a cache operation is in flight. */
+function setCacheBusy(busy) {
+  $('#cacheLoadBtn').disabled = busy;
+  $('#cacheUploadBtn').disabled = busy;
+}
+
+async function loadCache() {
+  const input = $('#cachePath');
+  const path = input.value.trim();
+  if (!path) {
+    setCacheStatus('Enter a cache path.', 'error');
+    return;
+  }
+  setCacheStatus('Loading cache…', '');
+  setCacheBusy(true);
+  try {
+    const data = await apiLoadCache(path);
+    state.cache = {
+      source: 'path',
+      path: data.path || path,   // resolved server path, or the raw input if absent
+      n_nights: data.n_nights,
+      start: data.start,
+      end: data.end,
+      n_targets: data.n_targets,
+      target_names: data.target_names || []
+    };
+    applyCacheDateLimits();
+    renderCacheStatus();
+  } catch (err) {
+    clearCacheOnError(err.message);
+  } finally {
+    setCacheBusy(false);
+  }
+}
+
+async function uploadCache(file) {
+  if (!file) return;
+  if (!/\.npz$/i.test(file.name)) {
+    clearCacheOnError('Only .npz files are supported.');
+    return;
+  }
+  setCacheStatus('Uploading ' + file.name + '…', '');
+  setCacheBusy(true);
+  try {
+    const data = await apiUploadCache(file);
+    state.cache = {
+      source: 'upload',
+      cache_id: data.cache_id,
+      filename: data.filename || file.name,
+      n_nights: data.n_nights,
+      start: data.start,
+      end: data.end,
+      n_targets: data.n_targets,
+      target_names: data.target_names || []
+    };
+    applyCacheDateLimits();
+    renderCacheStatus();
+  } catch (err) {
+    clearCacheOnError(err.message);
+  } finally {
+    setCacheBusy(false);
+  }
+}
+
+function clearCache() {
+  state.cache = null;
+  applyCacheDateLimits();
+  renderCacheStatus();
+}
+
+/* ============================================================
    Run flow: start -> poll -> done/error/cancelled
    ============================================================ */
 
@@ -539,6 +695,10 @@ async function startSchedule() {
     gamma: parseNum($('#gamma').value),
     alpha: parseNum($('#alpha').value)
   };
+  if (state.cache) {
+    if (state.cache.source === 'upload') body.cache_id = state.cache.cache_id;
+    else body.cache_path = state.cache.path;
+  }
 
   try {
     const res = await apiStartSchedule(body);
@@ -1543,6 +1703,7 @@ function wireEvents() {
     refreshRowFeedback(idx);
     updateTargetsStatus();
     updateRunState();
+    updateCacheTargetCheck();
   });
 
   $('#targetsBody').addEventListener('click', (e) => {
@@ -1584,6 +1745,34 @@ function wireEvents() {
   $('#runBtn').addEventListener('click', startSchedule);
   $('#cancelBtn').addEventListener('click', cancelJob);
 
+  /* Visibility cache */
+  $('#cacheLoadBtn').addEventListener('click', loadCache);
+  $('#cacheClearBtn').addEventListener('click', clearCache);
+  $('#cacheUploadBtn').addEventListener('click', () => $('#cacheFile').click());
+  $('#cacheFile').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) uploadCache(f);
+  });
+
+  /* Drag-and-drop upload onto the cache card */
+  const cacheCard = $('#cacheCard');
+  ['dragenter', 'dragover'].forEach((ev) =>
+    cacheCard.addEventListener(ev, (e) => {
+      e.preventDefault();
+      cacheCard.classList.add('drag-over');
+    }));
+  cacheCard.addEventListener('dragleave', (e) => {
+    if (!cacheCard.contains(e.relatedTarget)) cacheCard.classList.remove('drag-over');
+  });
+  cacheCard.addEventListener('drop', (e) => {
+    e.preventDefault();
+    cacheCard.classList.remove('drag-over');
+    const files = e.dataTransfer && e.dataTransfer.files;
+    const f = files && files[0];
+    if (f) uploadCache(f);
+  });
+
   /* Tabs */
   $$('.tab-btn').forEach((b) =>
     b.addEventListener('click', () => activateTab(b.dataset.tab)));
@@ -1615,4 +1804,5 @@ function wireEvents() {
   wireEvents();
   renderTargetsTable();
   updateRunState();
+  renderCacheStatus();
 })();
